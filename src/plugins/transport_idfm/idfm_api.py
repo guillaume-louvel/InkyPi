@@ -165,7 +165,13 @@ class PrimClient:
             return None, None
 
         def nav(s):
-            return datetime.strptime(s, "%Y%m%dT%H%M%S").replace(tzinfo=self.tz) if s else None
+            if not s:
+                return None
+            naive = datetime.strptime(s, "%Y%m%dT%H%M%S")
+            # pytz demande localize() : replace(tzinfo=…) donnerait un décalage LMT erroné
+            if hasattr(self.tz, "localize"):
+                return self.tz.localize(naive)
+            return naive.replace(tzinfo=self.tz)
 
         return nav(trajets[0].get("departure_date_time")), nav(trajets[0].get("arrival_date_time"))
 
