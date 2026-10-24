@@ -156,8 +156,8 @@ def plugin_view(minutes_ahead=0):
         print("Arrival:", f"{state.arrivee:%H:%M} (bus at {state.depart_trajet:%H:%M})" if state.arrivee else None)
         if state.meteo:
             w = state.meteo.vue()
-            print(f"Weather: {w['temperature']}° (feels {w['ressenti']}°) | bike {w['fenetre']}: {w['etat']} | "
-                  f"{w['temp_trajet']} | {w['pluie']} | {w['vent']} | alerts: {w['alertes'] or None}")
+            print(f"Weather: {w['temperature']}° (feels {w['ressenti']}°) | bike ride {at_stop}-{bike_to}: "
+                  f"{w['etat']} | {w['temp_trajet']} | {w['pluie']} | {w['vent']} | alerts: {w['alertes'] or None}")
         print("Errors:", state.erreurs or None)
     return view
 
