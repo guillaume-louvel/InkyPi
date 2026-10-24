@@ -56,9 +56,27 @@ Abonnements PRIM nécessaires : *Prochains Passages – requête unitaire*, *Mes
 Trafic* et *Calculateur IDFM – Accès générique (Navitia)*. Ne pas utiliser la requête
 globale, bien trop lourde pour un Zero 2W.
 
+## Vérifié avec la vraie API (24/10, `scripts/idfm_check.py`)
+
+- **Identifiants** : `stop_area:IDFM:<n>` → `STIF:StopArea:SP:<n>:` fonctionne pour
+  Joinville-le-Pont (70640) et l'arrêt de bus Les Platanes (70606). Le point 1 ci-dessous est réglé.
+- **Chemins Navitia sans `coverage/…`** : fonctionnent (point 2 réglé).
+- **`PublishedLineName` est absent** des passages (point 4) : seul `LineRef` est fourni
+  (106 = `C01135`, 108 = `C01137`, 110 = `C01139`). Le plugin récupère la table
+  nom → code via `stop_areas/<id>/lines` et filtre sur le code.
+- **Info trafic** (point 3) : `general-message` renvoyait surtout des travaux à venir, de nuit ou
+  sur d'autres branches, et le bandeau aurait été rouge en permanence. Remplacé par
+  `v2/navitia/lines/line:IDFM:C01742/line_reports`, filtré sur les perturbations qui touchent la
+  ligne ou un tronçon (pas les pannes d'ascenseur, rattachées à une gare) et dont une période
+  d'application tombe dans les 90 prochaines minutes. `severity.effect` n'est pas fiable : les
+  pannes d'ascenseur y sont en `SIGNIFICANT_DELAYS`. Hypothèse restante : que les vraies
+  perturbations de trafic soient bien rattachées à la ligne ou à un tronçon.
+- **Sens du RER** (point 5) : les destinations réelles sont bien « Boissy-Saint-Léger » et
+  « Saint-Germain-en-Laye ».
+
 ## Points à vérifier en priorité avec la vraie API
 
-Ce sont des hypothèses qui n'ont pas encore été confirmées :
+Hypothèses de départ, conservées pour l'historique (voir ci-dessus) :
 
 1. **Correspondance des identifiants.** `vers_siri()` transforme `stop_area:IDFM:12345` en
    `STIF:StopArea:SP:12345:` en supposant que le code numérique est le même des deux côtés

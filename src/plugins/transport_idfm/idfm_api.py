@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, tzinfo
@@ -33,12 +34,19 @@ def liste(texte: str) -> list[str]:
     return [t.strip() for t in (texte or "").replace(";", ",").split(",") if t.strip()]
 
 
+def code_ligne(ref: str) -> str:
+    """STIF:Line::C01742: ou line:IDFM:C01742 -> C01742"""
+    morceaux = [p for p in (ref or "").split(":") if p]
+    return morceaux[-1] if morceaux else ""
+
+
 @dataclass
 class Passage:
     ligne: str
     destination: str
     heure: datetime | None
     statut: str = ""
+    ligne_ref: str = ""  # STIF:Line::C01135: — PublishedLineName est souvent absent
 
     @property
     def annule(self) -> bool:
@@ -120,8 +128,10 @@ class PrimClient:
                 call = vj.get("MonitoredCall", {})
                 h = (call.get("ExpectedDepartureTime") or call.get("ExpectedArrivalTime")
                      or call.get("AimedDepartureTime") or call.get("AimedArrivalTime"))
+                ligne_ref = str(val(vj.get("LineRef")) or "")
                 res.append(Passage(
-                    ligne=str(val(vj.get("PublishedLineName")) or val(vj.get("LineRef")) or "?"),
+                    ligne=str(val(vj.get("PublishedLineName")) or ligne_ref or "?"),
+                    ligne_ref=ligne_ref,
                     destination=str(val(call.get("DestinationDisplay"))
                                     or val(vj.get("DestinationName")) or "?"),
                     heure=self.heure(h),
@@ -131,27 +141,72 @@ class PrimClient:
         res = [p for p in res if p.heure and p.heure >= limite]
         return sorted(res, key=lambda p: p.heure)
 
-    # ------------------------------------------------------------------ info trafic
-    def perturbations(self, line_ref: str) -> list[str]:
-        return self.extraire_perturbations(self.get("general-message", {"LineRef": line_ref}))
+    # ------------------------------------------------------------------ lignes
+    def lignes_arret(self, stop_area_id: str) -> dict[str, str]:
+        """Lignes desservant un arrêt : {"106": "C01135", ...}."""
+        data = self.get(f"v2/navitia/stop_areas/{stop_area_id}/lines")
+        return {str(l.get("code")): code_ligne(l.get("id", ""))
+                for l in data.get("lines") or [] if l.get("code") and l.get("id")}
 
-    def extraire_perturbations(self, data: dict) -> list[str]:
+    # ------------------------------------------------------------------ info trafic
+    def perturbations(self, line_ref: str, fenetre: timedelta = timedelta(minutes=90)) -> list[str]:
+        """Messages des perturbations de la ligne qui s'appliquent d'ici `fenetre`."""
+        data = self.get(f"v2/navitia/lines/line:IDFM:{code_ligne(line_ref)}/line_reports")
+        return self.extraire_perturbations(data, fenetre)
+
+    def extraire_perturbations(self, data: dict, fenetre: timedelta = timedelta(minutes=90)) -> list[str]:
+        """Garde les perturbations qui touchent la ligne ou un tronçon (pas un ascenseur
+        ou une gare seule) et dont une période d'application recoupe [maintenant, +fenetre].
+        Le champ severity.effect n'est pas fiable : les pannes d'ascenseur y sont en
+        SIGNIFICANT_DELAYS."""
+        debut = datetime.now(self.tz)
+        fin = debut + fenetre
         out = []
-        maintenant = datetime.now(self.tz)
-        livraisons = data.get("Siri", {}).get("ServiceDelivery", {}).get("GeneralMessageDelivery", [])
-        for liv in livraisons:
-            for msg in liv.get("InfoMessage") or []:
-                fin = self.heure(msg.get("ValidUntilTime"))
-                if fin and fin < maintenant:
-                    continue
-                if "perturbation" not in norm(str(val(msg.get("InfoChannelRef")) or "")):
-                    continue
-                for m in msg.get("Content", {}).get("Message") or []:
-                    texte = " ".join(str(val(m.get("MessageText")) or "").split())
-                    if texte:
-                        out.append(texte)
-                        break
+        for d in data.get("disruptions") or []:
+            if d.get("status") == "past":
+                continue
+            if not any(self._touche_la_ligne(o) for o in d.get("impacted_objects") or []):
+                continue
+            if not any(self._recoupe(p, debut, fin) for p in d.get("application_periods") or []):
+                continue
+            texte = self._message(d)
+            if texte:
+                out.append(texte)
         return list(dict.fromkeys(out))
+
+    @staticmethod
+    def _touche_la_ligne(objet: dict) -> bool:
+        return (objet.get("pt_object") or {}).get("embedded_type") == "line" or "impacted_section" in objet
+
+    def _recoupe(self, periode: dict, debut: datetime, fin: datetime) -> bool:
+        p_debut, p_fin = self._date_navitia(periode.get("begin")), self._date_navitia(periode.get("end"))
+        if not p_debut or not p_fin:
+            return False
+        return p_debut < fin and p_fin > debut
+
+    @staticmethod
+    def _message(perturbation: dict) -> str:
+        messages = perturbation.get("messages") or []
+        # Texte brut de préférence, sinon on retire les balises HTML
+        messages.sort(key=lambda m: (m.get("channel") or {}).get("content_type") != "text/plain")
+        for m in messages:
+            texte = re.sub(r"<[^>]+>", " ", m.get("text") or "")
+            texte = " ".join(texte.split())
+            if texte:
+                return texte
+        return ""
+
+    def _date_navitia(self, s: str | None) -> datetime | None:
+        if not s:
+            return None
+        try:
+            naive = datetime.strptime(s, "%Y%m%dT%H%M%S")
+        except ValueError:
+            return None
+        # pytz demande localize() : replace(tzinfo=…) donnerait un décalage LMT erroné
+        if hasattr(self.tz, "localize"):
+            return self.tz.localize(naive)
+        return naive.replace(tzinfo=self.tz)
 
     # ------------------------------------------------------------------ itinéraire
     def itineraire(self, depart: str, arrivee: str) -> tuple[datetime | None, datetime | None]:
@@ -163,26 +218,18 @@ class PrimClient:
         trajets = data.get("journeys") or []
         if not trajets:
             return None, None
-
-        def nav(s):
-            if not s:
-                return None
-            naive = datetime.strptime(s, "%Y%m%dT%H%M%S")
-            # pytz demande localize() : replace(tzinfo=…) donnerait un décalage LMT erroné
-            if hasattr(self.tz, "localize"):
-                return self.tz.localize(naive)
-            return naive.replace(tzinfo=self.tz)
-
-        return nav(trajets[0].get("departure_date_time")), nav(trajets[0].get("arrival_date_time"))
+        return (self._date_navitia(trajets[0].get("departure_date_time")),
+                self._date_navitia(trajets[0].get("arrival_date_time")))
 
 
 def filtrer(passages: list[Passage], lignes: list[str], contient: str,
             exclure: list[str], nombre: int) -> list[Passage]:
+    """`lignes` accepte des noms (« 106 ») ou des codes (« C01135 »)."""
     lignes_n = {norm(l) for l in lignes}
     contient_n = norm(contient)
     exclure_n = [norm(x) for x in exclure]
     out = [p for p in passages
-           if (not lignes_n or norm(p.ligne) in lignes_n)
+           if (not lignes_n or norm(p.ligne) in lignes_n or norm(code_ligne(p.ligne_ref)) in lignes_n)
            and (not contient_n or contient_n in norm(p.destination))
            and not any(x in norm(p.destination) for x in exclure_n)]
     return out[:nombre]

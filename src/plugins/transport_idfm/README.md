@@ -6,8 +6,10 @@ données temps réel d'Île-de-France Mobilités (PRIM).
 ## Clé API
 
 1. Compte gratuit sur https://prim.iledefrance-mobilites.fr
-2. Abonne-toi à : *Prochains Passages – requête unitaire*, *Messages Info Trafic*,
-   *Calculateur Île-de-France Mobilités – Accès générique (Navitia)*.
+2. Abonne-toi à : *Prochains Passages – requête unitaire* et
+   *Calculateur Île-de-France Mobilités – Accès générique (Navitia)*
+   (l'info trafic vient aussi de Navitia).
+   Pour vérifier la clé et les arrêts : `scripts/idfm_check.py "Nom de l'arrêt"`.
 3. Dans le fichier `.env` à la racine d'InkyPi : `PRIM_API_KEY=ta_cle`
 4. `sudo systemctl restart inkypi.service`
 

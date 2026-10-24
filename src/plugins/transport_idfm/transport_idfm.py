@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pytz
 
 from plugins.base_plugin.base_plugin import BasePlugin
-from plugins.transport_idfm.idfm_api import Etat, Passage, PrimClient, filtrer, liste
+from plugins.transport_idfm.idfm_api import Etat, Passage, PrimClient, code_ligne, filtrer, liste, norm
 
 logger = logging.getLogger(__name__)
 
@@ -62,16 +62,36 @@ class TransportIdfm(BasePlugin):
             logger.info(f"Arrêt '{saisie}' résolu en {nom} ({nid})")
         return cache["id"], cache["nom"]
 
+    def _lignes(self, client, settings, stop_id):
+        """Noms des lignes d'un arrêt par code ({"C01135": "106"}), mis en cache dans les réglages.
+        Les passages temps réel ne donnent que le code : il faut cette table pour filtrer et afficher."""
+        cache = settings.get("_busLinesCache") or {}
+        if cache.get("arret") != stop_id:
+            try:
+                par_nom = client.lignes_arret(stop_id)
+            except Exception as ex:  # noqa: BLE001 - on retombe sur le filtre par nom
+                logger.warning(f"Lignes de l'arrêt {stop_id} indisponibles : {ex}")
+                return {}
+            cache = {"arret": stop_id, "lignes": {code: nom for nom, code in par_nom.items()}}
+            settings["_busLinesCache"] = cache
+        return cache["lignes"]
+
     # ------------------------------------------------------------------ données
     def _collecter(self, client, s):
         e = Etat()
         noms = {}
         try:
             bus_id, noms["bus"] = self._resoudre(client, s, "busStop")
+            noms_lignes = self._lignes(client, s, bus_id)
+            demandees = liste(self._reglage(s, "busLines"))
+            demandees_n = {norm(d) for d in demandees}
+            codes = [code for code, nom in noms_lignes.items() if norm(nom) in demandees_n]
             ps = client.passages(client.vers_siri(bus_id))
-            e.bus = filtrer(ps, liste(self._reglage(s, "busLines")),
+            e.bus = filtrer(ps, demandees + codes,
                             self._reglage(s, "busDestination"), [],
                             int(self._reglage(s, "busCount")))
+            for p in e.bus:
+                p.ligne = noms_lignes.get(code_ligne(p.ligne_ref), p.ligne)
         except Exception as ex:  # noqa: BLE001 - affiché à l'écran
             logger.exception("Bus")
             e.erreurs.append(f"Bus : {ex}")
