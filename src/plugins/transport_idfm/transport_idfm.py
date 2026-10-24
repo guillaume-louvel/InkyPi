@@ -4,7 +4,8 @@ from datetime import datetime, timedelta
 import pytz
 
 from plugins.base_plugin.base_plugin import BasePlugin
-from plugins.transport_idfm.idfm_api import Etat, Passage, PrimClient, code_ligne, filtrer, liste, norm
+from plugins.transport_idfm.idfm_api import (Etat, Passage, PrimClient, classer, code_ligne, filtrer,
+                                             liste, norm)
 
 logger = logging.getLogger(__name__)
 
@@ -103,20 +104,30 @@ class TransportIdfm(BasePlugin):
         except Exception as ex:  # noqa: BLE001
             logger.exception("RER")
             e.erreurs.append(f"RER : {ex}")
+        perturbations = None
         try:
-            e.perturbations = client.perturbations(self._reglage(s, "rerLineRef"))
+            perturbations = client.perturbations(self._reglage(s, "rerLineRef"))
             e.trafic_connu = True
         except Exception as ex:  # noqa: BLE001
             logger.exception("Info trafic")
             e.trafic_connu = False
             e.erreurs.append(f"Info trafic : {ex}")
+        trajet = None
         try:
             dest_id, noms["dest"] = self._resoudre(client, s, "destinationStop")
             if "bus" in noms:
-                e.depart_trajet, e.arrivee = client.itineraire(bus_id, dest_id)
+                trajet = client.itineraire(bus_id, dest_id)
+                if trajet:
+                    e.depart_trajet, e.arrivee = trajet.depart, trajet.arrivee
         except Exception as ex:  # noqa: BLE001
             logger.exception("Itinéraire")
             e.erreurs.append(f"Itinéraire : {ex}")
+        if perturbations is not None:
+            # Sans itinéraire, on ne connaît que la gare RER de départ et la destination
+            arrets = trajet.arrets if trajet else []
+            extremites = trajet.extremites if trajet else [
+                noms.get("rer", self._reglage(s, "rerStop")), noms.get("dest", self._reglage(s, "destinationStop"))]
+            e.perturbations, e.infos_trafic = classer(perturbations, arrets, extremites)
         return e, noms
 
     def _demo(self, maintenant):
@@ -181,6 +192,7 @@ class TransportIdfm(BasePlugin):
             "rer": [{"heure": hhmm(p.heure), "destination": p.destination, "annule": p.annule}
                     for p in etat.rer],
             "perturbation": etat.perturbations[0] if etat.perturbations else "",
+            "info_trafic": etat.infos_trafic[0] if etat.infos_trafic else "",
             "trafic_connu": getattr(etat, "trafic_connu", False),
             "arrivee": hhmm(etat.arrivee) if etat.arrivee else "",
             "depart": hhmm(etat.depart_trajet) if etat.depart_trajet else "",

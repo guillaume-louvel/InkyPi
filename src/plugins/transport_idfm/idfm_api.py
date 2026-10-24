@@ -55,10 +55,26 @@ class Passage:
 
 
 @dataclass
+class Perturbation:
+    texte: str
+    sections: list[tuple[str, str]] = field(default_factory=list)  # (gare de début, gare de fin)
+    ligne_entiere: bool = False
+
+
+@dataclass
+class Trajet:
+    depart: datetime | None
+    arrivee: datetime | None
+    arrets: list[str] = field(default_factory=list)       # tous les arrêts traversés
+    extremites: list[str] = field(default_factory=list)   # où l'on monte et descend
+
+
+@dataclass
 class Etat:
     bus: list[Passage] = field(default_factory=list)
     rer: list[Passage] = field(default_factory=list)
-    perturbations: list[str] = field(default_factory=list)
+    perturbations: list[str] = field(default_factory=list)  # gênantes pour le trajet
+    infos_trafic: list[str] = field(default_factory=list)   # sur la ligne, sans gêner le trajet
     trafic_connu: bool = False
     arrivee: datetime | None = None
     depart_trajet: datetime | None = None
@@ -150,34 +166,39 @@ class PrimClient:
                 for l in data.get("lines") or [] if l.get("code") and l.get("id")}
 
     # ------------------------------------------------------------------ info trafic
-    def perturbations(self, line_ref: str, fenetre: timedelta = timedelta(minutes=90)) -> list[str]:
-        """Messages des perturbations de la ligne qui s'appliquent d'ici `fenetre`."""
+    def perturbations(self, line_ref: str, fenetre: timedelta = timedelta(minutes=90)) -> list[Perturbation]:
+        """Perturbations de la ligne qui s'appliquent d'ici `fenetre`."""
         data = self.get(f"v2/navitia/lines/line:IDFM:{code_ligne(line_ref)}/line_reports")
         return self.extraire_perturbations(data, fenetre)
 
-    def extraire_perturbations(self, data: dict, fenetre: timedelta = timedelta(minutes=90)) -> list[str]:
-        """Garde les perturbations qui touchent la ligne ou un tronçon (pas un ascenseur
-        ou une gare seule) et dont une période d'application recoupe [maintenant, +fenetre].
-        Le champ severity.effect n'est pas fiable : les pannes d'ascenseur y sont en
-        SIGNIFICANT_DELAYS."""
+    def extraire_perturbations(self, data: dict, fenetre: timedelta = timedelta(minutes=90)) -> list[Perturbation]:
+        """Garde les perturbations qui touchent la ligne entière ou un tronçon (pas les
+        ascenseurs, rattachés à une gare) et dont une période d'application recoupe
+        [maintenant, +fenetre]. Le champ severity.effect n'est pas fiable : les pannes
+        d'ascenseur y sont en SIGNIFICANT_DELAYS. Une gare non desservie est un tronçon
+        d'une seule gare (début = fin)."""
         debut = datetime.now(self.tz)
         fin = debut + fenetre
-        out = []
+        out = {}
         for d in data.get("disruptions") or []:
             if d.get("status") == "past":
                 continue
-            if not any(self._touche_la_ligne(o) for o in d.get("impacted_objects") or []):
+            sections, ligne_entiere = [], False
+            for objet in d.get("impacted_objects") or []:
+                section = objet.get("impacted_section")
+                if section:
+                    sections.append(((section.get("from") or {}).get("name", ""),
+                                     (section.get("to") or {}).get("name", "")))
+                elif (objet.get("pt_object") or {}).get("embedded_type") == "line":
+                    ligne_entiere = True
+            if not (sections or ligne_entiere):
                 continue
             if not any(self._recoupe(p, debut, fin) for p in d.get("application_periods") or []):
                 continue
             texte = self._message(d)
-            if texte:
-                out.append(texte)
-        return list(dict.fromkeys(out))
-
-    @staticmethod
-    def _touche_la_ligne(objet: dict) -> bool:
-        return (objet.get("pt_object") or {}).get("embedded_type") == "line" or "impacted_section" in objet
+            if texte and texte not in out:
+                out[texte] = Perturbation(texte, sections, ligne_entiere)
+        return list(out.values())
 
     def _recoupe(self, periode: dict, debut: datetime, fin: datetime) -> bool:
         p_debut, p_fin = self._date_navitia(periode.get("begin")), self._date_navitia(periode.get("end"))
@@ -210,7 +231,7 @@ class PrimClient:
         return naive.replace(tzinfo=self.tz)
 
     # ------------------------------------------------------------------ itinéraire
-    def itineraire(self, depart: str, arrivee: str) -> tuple[datetime | None, datetime | None]:
+    def itineraire(self, depart: str, arrivee: str) -> Trajet | None:
         data = self.get("v2/navitia/journeys", {
             "from": depart, "to": arrivee,
             "datetime": datetime.now(self.tz).strftime("%Y%m%dT%H%M%S"),
@@ -218,9 +239,44 @@ class PrimClient:
         })
         trajets = data.get("journeys") or []
         if not trajets:
-            return None, None
-        return (self._date_navitia(trajets[0].get("departure_date_time")),
-                self._date_navitia(trajets[0].get("arrival_date_time")))
+            return None
+        trajet = Trajet(self._date_navitia(trajets[0].get("departure_date_time")),
+                        self._date_navitia(trajets[0].get("arrival_date_time")))
+        for section in trajets[0].get("sections") or []:
+            if section.get("type") != "public_transport":
+                continue
+            trajet.extremites += [(section.get("from") or {}).get("name", ""), (section.get("to") or {}).get("name", "")]
+            trajet.arrets += [(t.get("stop_point") or {}).get("name", "") for t in section.get("stop_date_times") or []]
+        return trajet
+
+
+def nom_gare(nom: str) -> str:
+    """« Nanterre - Préfecture (Nanterre) » et « Nanterre Préfecture » -> « nanterreprefecture »"""
+    sans_ville = re.sub(r"\s*\([^)]*\)\s*$", "", nom or "")
+    return re.sub(r"[^a-z0-9]", "", norm(sans_ville))
+
+
+def classer(perturbations: list[Perturbation], arrets: list[str],
+            extremites: list[str]) -> tuple[list[str], list[str]]:
+    """Sépare les perturbations qui gênent le trajet de celles données pour info.
+
+    Gênante : toute la ligne, une gare fermée où l'on monte ou descend, ou un tronçon de
+    plusieurs gares qui touche le trajet. Une gare fermée qu'on ne fait que traverser
+    n'est qu'une info. Sans trajet connu (`arrets` vide), tout tronçon de plusieurs gares
+    est considéré comme gênant."""
+    arrets_n = {nom_gare(a) for a in arrets}
+    extremites_n = {nom_gare(e) for e in extremites}
+    genantes, infos = [], []
+    for p in perturbations:
+        genante = p.ligne_entiere
+        for debut, fin in p.sections:
+            debut_n, fin_n = nom_gare(debut), nom_gare(fin)
+            if debut_n == fin_n:
+                genante = genante or debut_n in extremites_n
+            else:
+                genante = genante or not arrets_n or debut_n in arrets_n or fin_n in arrets_n
+        (genantes if genante else infos).append(p.texte)
+    return genantes, infos
 
 
 def filtrer(passages: list[Passage], lignes: list[str], contient: str,

@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from plugins.transport_idfm.idfm_api import Passage, PrimClient, code_ligne, filtrer
+from plugins.transport_idfm.idfm_api import Passage, Perturbation, PrimClient, classer, code_ligne, filtrer
 from plugins.transport_idfm.transport_idfm import TransportIdfm
 
 PARIS = ZoneInfo("Europe/Paris")
@@ -71,7 +71,10 @@ class TestDisruptions:
             disruption("Hier", LINE, now - timedelta(days=1), now - timedelta(hours=20), status="past"),
         ]}
 
-        assert client.extraire_perturbations(data) == ["Incident technique, retards", "Travaux entre Joinville et Nation"]
+        kept = client.extraire_perturbations(data)
+        assert [p.texte for p in kept] == ["Incident technique, retards", "Travaux entre Joinville et Nation"]
+        assert kept[0].ligne_entiere and kept[0].sections == []
+        assert not kept[1].ligne_entiere and len(kept[1].sections) == 1
 
     def test_html_message_is_cleaned(self):
         d = {"messages": [{"text": "<p>P&#233;riode : en semaine<br>d&#232;s 21h50</p>",
@@ -82,6 +85,37 @@ class TestDisruptions:
         d = {"messages": [{"text": "<b>Long HTML</b>", "channel": {"content_type": "text/html"}},
                           {"text": "Court", "channel": {"content_type": "text/plain"}}]}
         assert PrimClient._message(d) == "Court"
+
+
+# The route returned by the journey planner on 24/10 (CDG Étoile skipped that day)
+ROUTE = ["Les Platanes", "Joinville-le-Pont", "Joinville-le-Pont", "Nogent-sur-Marne", "Fontenay-sous-Bois",
+         "Vincennes", "Nation", "Gare de Lyon", "Châtelet - Les Halles", "Auber", "La Défense", "Nanterre - Préfecture"]
+ENDS = ["Les Platanes (Joinville-le-Pont)", "Joinville-le-Pont (Joinville-le-Pont)",
+        "Joinville-le-Pont (Joinville-le-Pont)", "Nanterre - Préfecture (Nanterre)"]
+
+
+class TestClassification:
+
+    @pytest.mark.parametrize("perturbation,blocking", [
+        # Real cases from 24/10: a station closed that the train only passes through
+        (Perturbation("CDG Étoile non desservie", [("Charles de Gaulle - Étoile (Paris)",) * 2]), False),
+        (Perturbation("Châtelet non desservie", [("Châtelet - Les Halles (Paris)",) * 2]), False),
+        # The station where you board or get off
+        (Perturbation("Joinville non desservie", [("Joinville-le-Pont (Joinville-le-Pont)",) * 2]), True),
+        (Perturbation("Nanterre fermée", [("Nanterre Préfecture",) * 2]), True),
+        # Stretches of track: on another branch, or on the route
+        (Perturbation("Travaux Boissy", [("La Varenne - Chennevières (Saint-Maur)", "Boissy-Saint-Léger (Boissy)")]), False),
+        (Perturbation("Incident Vincennes - Nation", [("Vincennes (Vincennes)", "Nation (Paris)")]), True),
+        # The whole line
+        (Perturbation("Incident technique", [], ligne_entiere=True), True),
+    ])
+    def test_against_the_route(self, perturbation, blocking):
+        genantes, infos = classer([perturbation], ROUTE, ENDS)
+        assert (genantes, infos) == (([perturbation.texte], []) if blocking else ([], [perturbation.texte]))
+
+    def test_any_stretch_blocks_when_route_is_unknown(self):
+        p = Perturbation("Travaux Boissy", [("La Varenne - Chennevières", "Boissy-Saint-Léger")])
+        assert classer([p], [], ["Joinville-le-Pont", "Nanterre Préfecture"]) == (["Travaux Boissy"], [])
 
 
 class FakeClient(PrimClient):
@@ -114,10 +148,24 @@ class FakeClient(PrimClient):
                       siri_visit("STIF:Line::C01742:", "Saint-Germain-en-Laye", now + timedelta(minutes=6))]
             return {"Siri": {"ServiceDelivery": {"StopMonitoringDelivery": [{"MonitoredStopVisit": visits}]}}}
         if chemin == "v2/navitia/lines/line:IDFM:C01742/line_reports":
-            return {"disruptions": []}
+            today = now.replace(tzinfo=None)
+            cdg = {"pt_object": {"embedded_type": "line"},
+                   "impacted_section": {"from": {"name": "Charles de Gaulle - Étoile (Paris)"},
+                                        "to": {"name": "Charles de Gaulle - Étoile (Paris)"}}}
+            return {"disruptions": [
+                disruption("Panne d'un ascenseur", STATION, today - timedelta(days=9), today + timedelta(days=300)),
+                disruption("CDG Étoile non desservie", cdg, today - timedelta(hours=8), today + timedelta(hours=12)),
+            ]}
         if chemin == "v2/navitia/journeys":
-            return {"journeys": [{"departure_date_time": navitia(now + timedelta(minutes=4)),
-                                  "arrival_date_time": navitia(now + timedelta(minutes=50))}]}
+            def section(start, end, stops):
+                return {"type": "public_transport", "from": {"name": start}, "to": {"name": end},
+                        "stop_date_times": [{"stop_point": {"name": n}} for n in stops]}
+            return {"journeys": [{
+                "departure_date_time": navitia(now + timedelta(minutes=4)),
+                "arrival_date_time": navitia(now + timedelta(minutes=50)),
+                "sections": [section(ENDS[0], ENDS[1], ROUTE[:2]), {"type": "transfer"},
+                             section(ENDS[2], ENDS[3], ROUTE[2:])],
+            }]}
         raise AssertionError(f"unexpected call: {chemin} {params}")
 
 
@@ -135,6 +183,7 @@ class TestCollection:
                                                                 ("110", "Joinville RER")]
         assert [p.destination for p in etat.rer] == ["Saint-Germain-en-Laye"]
         assert etat.trafic_connu and etat.perturbations == []
+        assert etat.infos_trafic == ["CDG Étoile non desservie"]
         assert etat.arrivee is not None
         assert noms["bus"] == "Les Platanes (Joinville-le-Pont)"
 

@@ -145,6 +145,7 @@ def plugin_view():
     print("RER:", [f"{p.heure:%H:%M} {p.destination}" for p in state.rer])
     print("Traffic banner:", (state.perturbations[0] if state.perturbations else "normal")
           if state.trafic_connu else "unknown")
+    print("Small traffic info:", state.infos_trafic or None)
     print("Arrival:", f"{state.arrivee:%H:%M}" if state.arrivee else None)
     print("Errors:", state.erreurs or None)
 

@@ -71,6 +71,14 @@ globale, bien trop lourde pour un Zero 2W.
   d'application tombe dans les 90 prochaines minutes. `severity.effect` n'est pas fiable : les
   pannes d'ascenseur y sont en `SIGNIFICANT_DELAYS`. Hypothèse restante : que les vraies
   perturbations de trafic soient bien rattachées à la ligne ou à un tronçon.
+- **Gênant ou pour info** : le statut global de l'itinéraire Navitia est inutilisable (il passe
+  en `SIGNIFICANT_DELAYS` pour une panne d'ascenseur à Joinville). En revanche l'itinéraire
+  donne la liste des gares traversées, et une gare non desservie est un tronçon d'une seule
+  gare (CDG Étoile → CDG Étoile). `classer()` met donc en rouge : la ligne entière, une gare
+  fermée où l'on monte ou descend, un tronçon de plusieurs gares qui touche le trajet. Le reste
+  (gare seulement traversée, autre branche) s'affiche en petit sous « Trafic normal ».
+  Les périodes d'application sont parfois grossières (Châtelet fermée « dès 22h » enregistrée
+  en une seule période du jeudi au lundi), d'où ce tri par gare plutôt que par horaire.
 - **Sens du RER** (point 5) : les destinations réelles sont bien « Boissy-Saint-Léger » et
   « Saint-Germain-en-Laye ».
 

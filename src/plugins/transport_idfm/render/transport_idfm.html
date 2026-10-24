@@ -33,6 +33,7 @@
                 <p class="message">{{ perturbation }}</p>
             {% elif trafic_connu %}
                 <div class="etat vert">✓ Trafic normal</div>
+                {% if info_trafic %}<p class="message info">{{ info_trafic }}</p>{% endif %}
             {% else %}
                 <div class="etat jaune">État du trafic inconnu</div>
             {% endif %}

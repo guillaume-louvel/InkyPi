@@ -87,6 +87,8 @@ h2 {
   overflow: hidden;
 }
 
+.message.info { font-size: calc(3 * var(--u)); -webkit-line-clamp: 2; }
+
 .ligne-rer {
   display: flex;
   align-items: baseline;
