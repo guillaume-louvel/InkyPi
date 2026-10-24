@@ -1,0 +1,84 @@
+<div class="form-group">
+    <label for="title" class="form-label">Titre (facultatif)</label>
+    <input type="text" id="title" name="title" class="form-input" placeholder="ex. Bientôt">
+</div>
+
+<div class="form-group">
+    <label for="maxCards" class="form-label">Nombre maximum de cartes affichées</label>
+    <input type="number" id="maxCards" name="maxCards" class="form-input" min="1" max="{{ max_cards }}" value="{{ default_cards }}">
+    <span>Les événements les plus proches d'abord ; ceux qui sont passés disparaissent.</span>
+</div>
+
+<div class="form-group">
+    <label class="form-label">Événements</label>
+    <div id="eventList"></div>
+    <button type="button" id="addEventBtn" class="form-input collapsible" onclick="addEventInput()">Ajouter un événement</button>
+</div>
+
+<style>
+    .event-entry { padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+</style>
+
+<script>
+    const MAX_EVENTS = {{ max_events }};
+
+    function addEventInput(name = '', date = '', repeat = 'once') {
+        const list = document.getElementById('eventList');
+
+        const wrapper = document.createElement('div');
+        wrapper.classList.add('event-entry', 'form-group');
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'text';
+        nameInput.name = 'eventNames[]';
+        nameInput.placeholder = 'Nom (ex. Anniversaire de Léa)';
+        nameInput.required = true;
+        nameInput.maxLength = 60;
+        nameInput.classList.add('form-input');
+        nameInput.value = name;
+
+        const dateInput = document.createElement('input');
+        dateInput.type = 'date';
+        dateInput.name = 'eventDates[]';
+        dateInput.required = true;
+        dateInput.classList.add('form-input');
+        dateInput.value = date;
+
+        // Une liste déroulante plutôt qu'une case à cocher : une case non cochée n'est pas
+        // envoyée et décalerait les listes de noms, dates et répétitions.
+        const repeatSelect = document.createElement('select');
+        repeatSelect.name = 'eventRepeats[]';
+        repeatSelect.classList.add('form-input');
+        [['once', 'Une seule fois'], ['yearly', 'Chaque année'], ['birthday', 'Anniversaire (affiche l\'âge)']]
+            .forEach(([value, label]) => repeatSelect.add(new Option(label, value, false, value === repeat)));
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.innerText = '✕';
+        removeBtn.classList.add('remove-btn');
+        removeBtn.onclick = () => { wrapper.remove(); updateAddButton(); };
+
+        wrapper.append(nameInput, dateInput, repeatSelect, removeBtn);
+        list.appendChild(wrapper);
+        updateAddButton();
+    }
+
+    function updateAddButton() {
+        document.getElementById('addEventBtn').disabled =
+            document.querySelectorAll('#eventList .event-entry').length >= MAX_EVENTS;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (loadPluginSettings) {
+            document.getElementById('title').value = pluginSettings.title || '';
+            document.getElementById('maxCards').value = pluginSettings.maxCards || {{ default_cards }};
+            const names = pluginSettings['eventNames[]'] || [];
+            const dates = pluginSettings['eventDates[]'] || [];
+            const repeats = pluginSettings['eventRepeats[]'] || [];
+            names.forEach((name, i) => addEventInput(name, dates[i] || '', repeats[i] || 'once'));
+        }
+        if (!document.querySelector('#eventList .event-entry')) {
+            addEventInput();
+        }
+    });
+</script>

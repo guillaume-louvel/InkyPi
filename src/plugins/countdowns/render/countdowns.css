@@ -1,0 +1,62 @@
+/* Noir et blanc uniquement : aucun tramage sur l'écran e-ink. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+.comptes {
+  font-family: "Jost";
+  color: #000;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2vmin;
+}
+
+.titre {
+  font-size: var(--titre);
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.grille {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--colonnes), 1fr);
+  grid-template-rows: repeat(var(--lignes), 1fr);
+  gap: 2.5vmin;
+}
+
+.carte {
+  border: 3px solid #000;
+  border-radius: 2vmin;
+  padding: 1.5vmin 2vmin;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.nombre {
+  font-weight: 600;
+  line-height: 0.95;
+  white-space: nowrap;
+}
+.unite { font-size: calc(var(--nom) * 0.85); line-height: 1.1; }
+.nom {
+  font-size: var(--nom);
+  font-weight: 600;
+  line-height: 1.15;
+  margin-top: 1vmin;
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.detail { font-size: calc(var(--nom) * 0.75); line-height: 1.2; }
+
+.vide { font-size: var(--titre); text-align: center; margin: auto; }

@@ -1,0 +1,23 @@
+{% extends "plugin.html" %}
+
+{% block content %}
+<div class="comptes" style="--colonnes: {{ t.colonnes }}; --lignes: {{ t.lignes }};
+     --nom: {{ t.nom | int }}px; --titre: {{ t.titre | int }}px;">
+    {% if titre %}<h1 class="titre">{{ titre }}</h1>{% endif %}
+
+    {% if cartes %}
+    <div class="grille">
+        {% for c in cartes %}
+        <div class="carte">
+            <div class="nombre {% if not c.unite %}jour-j{% endif %}" style="font-size: {{ c.taille }}px">{{ c.nombre }}</div>
+            {% if c.unite %}<div class="unite">{{ c.unite }}</div>{% endif %}
+            <div class="nom">{{ c.nom }}</div>
+            <div class="detail">{{ c.detail }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="vide">Aucun événement à venir</p>
+    {% endif %}
+</div>
+{% endblock %}
