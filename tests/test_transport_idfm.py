@@ -73,6 +73,11 @@ class TestDisruptions:
 
         assert client.extraire_perturbations(data) == ["Incident technique, retards", "Travaux entre Joinville et Nation"]
 
+    def test_html_message_is_cleaned(self):
+        d = {"messages": [{"text": "<p>P&#233;riode : en semaine<br>d&#232;s 21h50</p>",
+                           "channel": {"content_type": "text/html"}}]}
+        assert PrimClient._message(d) == "Période : en semaine dès 21h50"
+
     def test_prefers_plain_text_message(self):
         d = {"messages": [{"text": "<b>Long HTML</b>", "channel": {"content_type": "text/html"}},
                           {"text": "Court", "channel": {"content_type": "text/plain"}}]}

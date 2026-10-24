@@ -8,8 +8,10 @@ Reads PRIM_API_KEY from the .env file. Prints what the APIs return for the bus
 stop, the lines serving it, the RER A disruptions, and what the plugin would
 display from all that; never prints the key.
 """
+import html
 import logging
 import os
+import re
 import sys
 from collections import Counter
 from zoneinfo import ZoneInfo
@@ -36,6 +38,11 @@ def get(path, params=None):
         raise RuntimeError(f"HTTP {response.status_code}: key refused (check the PRIM subscriptions)")
     response.raise_for_status()
     return response.json()
+
+
+def text(disruption):
+    message = (disruption.get("messages") or [{}])[0].get("text") or ""
+    return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", message)).split())
 
 
 def section(title, fn):
@@ -91,10 +98,39 @@ def rer_disruptions():
     print(f"{len(line_level)} affect the line or a section of it:")
     for d in line_level[:15]:
         periods = d.get("application_periods") or [{}]
-        message = ((d.get("messages") or [{}])[0].get("text") or "").replace("\n", " ")
-        print(d.get("status"), "|", (d.get("severity") or {}).get("effect"), "|",
-              periods[0].get("begin"), "->", periods[0].get("end"), f"({len(periods)} periods)", "|",
-              message[:70])
+        print(d.get("status"), "|", periods[0].get("begin"), "->", periods[0].get("end"),
+              f"({len(periods)} periods)", "|", text(d)[:70])
+        for o in d.get("impacted_objects") or []:
+            section_info = o.get("impacted_section")
+            if section_info:
+                print("    section:", (section_info.get("from") or {}).get("name"), "->",
+                      (section_info.get("to") or {}).get("name"))
+            if o.get("impacted_stops"):
+                print("    impacted stops:", [(s.get("stop_point") or {}).get("name") for s in o["impacted_stops"]][:8])
+
+
+def journey():
+    destination = get("v2/navitia/places", {"q": "Nanterre Préfecture", "type[]": "stop_area", "count": 1})["places"][0]
+    data = get("v2/navitia/journeys", {"from": stop["id"], "to": destination["id"],
+                                       "data_freshness": "realtime", "count": 1})
+    journeys = data.get("journeys") or []
+    if not journeys:
+        print("no journey found")
+        return
+    j = journeys[0]
+    print("status:", j.get("status") or "(none)", "| leave", j.get("departure_date_time"),
+          "| arrive", j.get("arrival_date_time"))
+    for s in j.get("sections") or []:
+        if s.get("type") != "public_transport":
+            continue
+        info = s.get("display_informations") or {}
+        stops = [(t.get("stop_point") or {}).get("name") for t in s.get("stop_date_times") or []]
+        links = [l for l in info.get("links") or [] if l.get("type") == "disruption"]
+        print(info.get("commercial_mode"), info.get("code"), "|", (s.get("from") or {}).get("name"), "->",
+              (s.get("to") or {}).get("name"), f"| {len(links)} disruptions linked")
+        print("    stops:", ", ".join(stops))
+    for d in data.get("disruptions") or []:
+        print("journey disruption:", d.get("status"), "|", (d.get("severity") or {}).get("effect"), "|", text(d)[:80])
 
 
 def plugin_view():
@@ -127,5 +163,6 @@ if __name__ == "__main__":
     if stop:
         section("Departures at that stop", departures)
         section("Lines at that stop", lines)
+        section("Journey to Nanterre Préfecture (realtime)", journey)
     section("RER A disruptions (Navitia)", rer_disruptions)
     section("What the plugin would show now", plugin_view)

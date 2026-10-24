@@ -1,6 +1,7 @@
 """Accès aux API PRIM d'Île-de-France Mobilités (prochains passages, info trafic, itinéraire)."""
 from __future__ import annotations
 
+import html
 import logging
 import re
 import unicodedata
@@ -190,7 +191,7 @@ class PrimClient:
         # Texte brut de préférence, sinon on retire les balises HTML
         messages.sort(key=lambda m: (m.get("channel") or {}).get("content_type") != "text/plain")
         for m in messages:
-            texte = re.sub(r"<[^>]+>", " ", m.get("text") or "")
+            texte = html.unescape(re.sub(r"<[^>]+>", " ", m.get("text") or ""))
             texte = " ".join(texte.split())
             if texte:
                 return texte
