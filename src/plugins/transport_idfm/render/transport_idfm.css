@@ -100,7 +100,7 @@ h2 {
   margin-bottom: calc(1 * var(--u));
 }
 .etat.rouge { background: var(--rouge); color: var(--blanc); }
-.etat.vert { background: var(--vert); }
+.etat.vert { background: var(--vert); color: var(--blanc); }
 .etat.jaune { background: var(--jaune); }
 .message {
   font-size: calc(3.4 * var(--u));
@@ -146,7 +146,8 @@ h2 {
   white-space: nowrap;
   overflow: hidden;
 }
-.erreur { color: var(--rouge); overflow: hidden; text-overflow: ellipsis; }
+.erreur { color: var(--rouge); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.maj { flex-shrink: 0; padding-left: 2dvw; }
 
 /* Écran en portrait : colonnes empilées */
 @media (orientation: portrait) {

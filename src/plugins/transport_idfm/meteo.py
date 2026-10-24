@@ -80,7 +80,6 @@ class Meteo:
             "temperature": round(self.temperature),
             "ressenti": round(self.ressenti),
             "icone": icone(self.code, self.jour),
-            "fenetre": f"{h(self.debut)}–{h(self.fin)}",
             "etat": ETATS.get(code, ""),
             "temp_trajet": temp + (f", ressenti {round(self.ressenti_min)}°" if self.ressenti_min is not None else ""),
             "pluie": pluie,

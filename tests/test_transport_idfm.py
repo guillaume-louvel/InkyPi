@@ -193,7 +193,7 @@ class FakeClient(PrimClient):
                 departure("108", "line:IDFM:C01137", "Joinville-le-Pont RER", "08:44"),
             ]}
         if chemin == "v2/navitia/stop_areas/stop_area:IDFM:70640/departures":
-            assert params["from_datetime"] == "20261026T084500"  # the itinerary's train (8h47) - 2 min
+            assert params["from_datetime"] == "20261026T084600"  # first bus caught (8h36) + 10 min to the platform
             return {"departures": [
                 departure("A", "line:IDFM:C01742", "Saint-Germain-en-Laye", "08:47", realtime=True),
                 departure("A", "line:IDFM:C01742", "Boissy-Saint-Léger", "08:49"),
@@ -259,7 +259,7 @@ class TestCollection:
         # Live 110 at 8h28, then timetable buses (the 8h29 110 is the same bus as the live 8h28)
         assert [(p.ligne, f"{p.heure:%H:%M}", p.prevu) for p in etat.bus] == [
             ("110", "08:28", False), ("106", "08:36", True), ("108", "08:44", True)]
-        # Trains from the itinerary's one (8h47), westbound only
+        # Trains reachable after the first bus caught at the stop (8h36 + 10 min), westbound only
         assert [(f"{p.heure:%H:%M}", p.destination) for p in etat.rer] == [
             ("08:47", "Saint-Germain-en-Laye"), ("08:52", "Cergy-le-Haut"), ("08:57", "Poissy")]
         assert etat.depart_trajet == at("08:36") and etat.arrivee == at("09:20")
@@ -288,7 +288,7 @@ class TestWeather:
         assert (m.temperature, m.ressenti) == (6.2, 3.1)
         assert m.pluie_debut == at("08:30") and round(m.pluie_mm, 1) == 0.8
         assert (m.vent, m.rafales, m.pluie_proba) == (22, 55, 70)
-        assert vue["fenetre"] == "8h15–9h" and vue["etat"] == "Pluie faible"
+        assert vue["etat"] == "Pluie faible"
         assert vue["pluie"] == "Pluie dès 8h30 (0,8 mm)"
         assert vue["icone"].endswith("plugins/weather/icons/04d.png")
 

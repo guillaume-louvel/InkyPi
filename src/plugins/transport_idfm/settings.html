@@ -39,6 +39,10 @@
         <input type="text" id="rerLabel" name="rerLabel" class="form-input" value="{{ defaults.rerLabel }}">
     </div>
     <div class="form-group">
+        <span>Minutes entre le départ du bus et le quai du RER (les trains plus proches ne sont pas affichés)</span>
+        <input type="number" id="busToTrain" name="busToTrain" class="form-input" min="0" max="60" value="{{ defaults.busToTrain }}">
+    </div>
+    <div class="form-group">
         <span>Écarter les trains vers (mots séparés par des virgules)</span>
         <input type="text" id="rerExclude" name="rerExclude" class="form-input" value="{{ defaults.rerExclude }}">
     </div>
@@ -60,7 +64,7 @@
         <span>Masquer la météo (sinon : météo autour de l'arrêt de bus)</span>
     </div>
     <div class="form-group">
-        <span>Trajet à vélo de … à …</span>
+        <span>Prévision pour le trajet à vélo, de … à …</span>
         <input type="time" id="bikeFrom" name="bikeFrom" class="form-input" value="{{ defaults.bikeFrom }}">
         <input type="time" id="bikeTo" name="bikeTo" class="form-input" value="{{ defaults.bikeTo }}">
     </div>
@@ -73,10 +77,6 @@
         <span>Compte à rebours « X min » (redessine l'écran plus souvent)</span>
     </div>
     <div class="form-group">
-        <input type="checkbox" id="showRefreshTime" name="showRefreshTime" onclick="this.value=this.checked ? 'true' : 'false';">
-        <span>Heure de mise à jour (redessine l'écran à chaque rafraîchissement)</span>
-    </div>
-    <div class="form-group">
         <input type="checkbox" id="demoMode" name="demoMode" onclick="this.value=this.checked ? 'true' : 'false';">
         <span>Mode démo (données fictives, sans clé API)</span>
     </div>
@@ -87,13 +87,13 @@
         if (loadPluginSettings) {
             const champs = ['title', 'busStop', 'busLines', 'busDestination', 'busCount',
                             'rerStop', 'rerLineRef', 'rerLabel', 'rerExclude', 'rerCount',
-                            'destinationStop', 'atStop', 'bikeFrom', 'bikeTo'];
+                            'destinationStop', 'atStop', 'busToTrain', 'bikeFrom', 'bikeTo'];
             champs.forEach(id => {
                 if (pluginSettings[id] !== undefined) {
                     document.getElementById(id).value = pluginSettings[id];
                 }
             });
-            ['showCountdown', 'showRefreshTime', 'demoMode', 'hideWeather'].forEach(id => {
+            ['showCountdown', 'demoMode', 'hideWeather'].forEach(id => {
                 const el = document.getElementById(id);
                 el.checked = pluginSettings[id] === 'true';
                 el.value = el.checked ? 'true' : 'false';

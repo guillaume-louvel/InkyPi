@@ -68,7 +68,6 @@ class Trajet:
     arrivee: datetime | None
     arrets: list[str] = field(default_factory=list)       # tous les arrêts traversés
     extremites: list[str] = field(default_factory=list)   # où l'on monte et descend
-    montees: list[tuple[str, datetime | None]] = field(default_factory=list)  # (arrêt, heure de départ)
 
 
 @dataclass
@@ -277,8 +276,6 @@ class PrimClient:
             if section.get("type") != "public_transport":
                 continue
             trajet.extremites += [(section.get("from") or {}).get("name", ""), (section.get("to") or {}).get("name", "")]
-            trajet.montees.append(((section.get("from") or {}).get("name", ""),
-                                   self._date_navitia(section.get("departure_date_time"))))
             trajet.arrets += [(t.get("stop_point") or {}).get("name", "") for t in section.get("stop_date_times") or []]
         return trajet
 

@@ -22,12 +22,16 @@ données temps réel d'Île-de-France Mobilités (PRIM).
   d'arrivée sont calculés pour cette heure-là, même consultés à 7h30. Au-delà de
   l'horizon du temps réel, les horaires viennent du calculateur et sont marqués
   « ≈ ». Une fois l'heure passée, tout est calculé pour maintenant.
+- **Bus → quai du RER** (10 min par défaut) : seuls les trains qu'on peut attraper
+  après le premier bus pris à l'arrêt sont affichés.
 - **Info trafic** : en rouge seulement si la perturbation touche le trajet (ligne
   entière, gare de montée ou de descente, tronçon parcouru) dans les 90 minutes
   qui suivent l'heure à l'arrêt. Le reste s'affiche en petit sous « Trafic normal ».
 - **Météo** (Open-Meteo, sans clé) : autour de l'arrêt de bus ; température et
-  ressenti actuels, puis pluie, vent et rafales sur le créneau vélo (8h15–9h par
-  défaut). Pluie, rafales ≥ 50 km/h, verglas, neige et orage passent en rouge.
+  ressenti actuels, puis pluie, vent et rafales sur le créneau du trajet à vélo
+  (8h15–9h par défaut, réglable ; le créneau n'est pas affiché). Pluie, rafales
+  ≥ 50 km/h, verglas, neige et orage passent en rouge.
+- **Heure de mise à jour** : toujours affichée en bas à droite.
 - **Mode démo** : données fictives, pratique pour régler la mise en page.
 
 ## Programmation
@@ -39,8 +43,8 @@ données temps réel d'Île-de-France Mobilités (PRIM).
 
 La playlist prend la main à 7h30 pile et la rend à 8h30 (une playlist plus courte
 est prioritaire sur la playlist par défaut). InkyPi ne redessine l'écran que si
-l'image a changé ; laisse le compte à rebours et l'heure de MAJ désactivés
-(l'écran met ~30 s à se rafraîchir).
+l'image a changé ; avec l'heure de mise à jour affichée, il la redessine à chaque
+rafraîchissement (~30 s). Laisse le compte à rebours désactivé.
 
 Pour vérifier la clé, les arrêts et la météo sur le Pi :
 `sudo /usr/local/inkypi/venv_inkypi/bin/python scripts/idfm_check.py "Les Platanes"`

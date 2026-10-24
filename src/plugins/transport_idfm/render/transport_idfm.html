@@ -4,7 +4,7 @@
 <div class="idfm">
     <header class="bandeau">
         <span class="titre">{{ title }}</span>
-        <span class="date">{{ date }}{% if maj %} · MAJ {{ maj }}{% endif %}</span>
+        <span class="date">{{ date }}</span>
     </header>
 
     {% if meteo %}
@@ -15,7 +15,7 @@
             <div class="meteo-ressenti">ressenti {{ meteo.ressenti }}°</div>
         </div>
         <div class="meteo-trajet">
-            <div class="meteo-titre">Vélo {{ meteo.fenetre }} · {{ meteo.etat }}</div>
+            <div class="meteo-titre">{{ meteo.etat }}</div>
             <div>{{ meteo.temp_trajet }}</div>
             <div>
                 {% if meteo.alertes %}<span class="meteo-alerte">⚠ {{ meteo.alertes | join(" · ") }}</span>
@@ -79,8 +79,8 @@
             <span class="erreur">⚠ {{ erreurs | join(" | ") }}</span>
         {% else %}
             <span>{{ arret_bus }}{% if bus | selectattr("prevu") | list or rer | selectattr("prevu") | list %} · ≈ horaire prévu{% endif %}</span>
-            <span>Île-de-France Mobilités · Open-Meteo</span>
         {% endif %}
+        <span class="maj">IDFM · Open-Meteo · mis à jour à {{ maj }}</span>
     </div>
 </div>
 {% endblock %}

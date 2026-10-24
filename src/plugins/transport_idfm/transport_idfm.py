@@ -6,7 +6,7 @@ import pytz
 from plugins.base_plugin.base_plugin import BasePlugin
 from plugins.transport_idfm import meteo
 from plugins.transport_idfm.idfm_api import (Etat, Passage, PrimClient, classer, code_ligne, filtrer,
-                                             liste, nom_gare, norm)
+                                             liste, norm)
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +26,12 @@ DEFAUTS = {
     "rerCount": "3",
     "destinationStop": "Nanterre Préfecture",
     "atStop": "08:30",
+    "busToTrain": "10",
     "bikeFrom": "08:15",
     "bikeTo": "09:00",
 }
 
 MARGE_BUS = timedelta(minutes=3)       # bus montrés un peu avant l'heure visée à l'arrêt
-MARGE_RER = timedelta(minutes=2)
-TRAJET_BUS = timedelta(minutes=8)      # si l'itinéraire est indisponible
 DOUBLON = timedelta(minutes=3)          # même ligne à moins de 3 min : même bus
 
 
@@ -178,10 +177,9 @@ class TransportIdfm(BasePlugin):
         if rer_id:
             try:
                 rer_ref = self._reglage(s, "rerLineRef")
-                # Les trains à partir de celui de l'itinéraire
-                train = next((depart for arret, depart in (trajet.montees if trajet else [])
-                              if depart and nom_gare(arret) == nom_gare(noms["rer"])), None)
-                a_partir_de = train - MARGE_RER if train else e.a_l_arret + TRAJET_BUS
+                # Les trains qu'on peut attraper : premier bus pris à l'arrêt + trajet jusqu'au quai
+                bus_pris = next((p.heure for p in e.bus if not p.annule and p.heure >= e.a_l_arret), e.a_l_arret)
+                a_partir_de = bus_pris + timedelta(minutes=int(self._reglage(s, "busToTrain")))
                 e.rer = self._prochains(client, rer_id, client.passages(client.vers_siri(rer_id), rer_ref),
                                         [code_ligne(rer_ref)], "", liste(self._reglage(s, "rerExclude")),
                                         int(self._reglage(s, "rerCount")), max(a_partir_de, maintenant))
@@ -272,7 +270,7 @@ class TransportIdfm(BasePlugin):
         params = {
             "title": self._reglage(settings, "title"),
             "date": f"{JOURS[maintenant.weekday()]} {maintenant:%d/%m}",
-            "maj": hhmm(maintenant) if settings.get("showRefreshTime") == "true" else "",
+            "maj": hhmm(maintenant),
             "bus": [bus_vue(p) for p in etat.bus],
             "bus_destination": self._reglage(settings, "busDestination"),
             "a_l_arret": (hhmm(etat.a_l_arret)
