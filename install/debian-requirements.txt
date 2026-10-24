@@ -12,3 +12,5 @@ swig
 liblgpio-dev
 libheif-dev
 jq
+iw
+dnsmasq-base

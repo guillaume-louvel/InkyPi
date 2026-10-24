@@ -12,6 +12,10 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# After a failed scheduled refresh (e.g. a network blip), try again this soon
+# instead of waiting for the full plugin cycle interval.
+FAILED_REFRESH_RETRY_SECONDS = 5 * 60
+
 class RefreshTask:
     """Handles the logic for refreshing the display using a background thread."""
 
@@ -28,6 +32,10 @@ class RefreshTask:
         self.refresh_event = threading.Event()
         self.refresh_event.set()
         self.refresh_result = {}
+
+        self.network_monitor = None
+        self.force_refresh = False
+        self.retry_after_failure = False
 
     def start(self):
         """Starts the background thread for refreshing the display."""
@@ -71,9 +79,12 @@ class RefreshTask:
         - Captures and logs any unexpected errors during execution to prevent the thread from exiting.
         """
         while True:
+            manual = False
             try:
                 with self.condition:
                     sleep_time = self.device_config.get_config("plugin_cycle_interval_seconds", default=60*60)
+                    if self.retry_after_failure:
+                        sleep_time = min(sleep_time, FAILED_REFRESH_RETRY_SECONDS)
 
                     # Wait for sleep_time or until notified
                     self.condition.wait(timeout=sleep_time)
@@ -89,11 +100,15 @@ class RefreshTask:
                     current_dt = self._get_current_datetime()
 
                     refresh_action = None
+                    force = self.force_refresh
                     if self.manual_update_request:
                         # handle immediate update request
                         logger.info("Manual update requested")
+                        manual = True
                         refresh_action = self.manual_update_request
                         self.manual_update_request = ()
+                    elif self._in_wifi_setup():
+                        logger.info("WiFi setup screen is showing, skipping refresh")
                     else:
 
                         if self.device_config.get_config("log_system_stats"):
@@ -101,7 +116,7 @@ class RefreshTask:
 
                         # handle refresh based on playlists
                         logger.info(f"Running interval refresh check. | current_time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}")
-                        playlist, plugin_instance = self._determine_next_plugin(playlist_manager, latest_refresh, current_dt)
+                        playlist, plugin_instance = self._determine_next_plugin(playlist_manager, latest_refresh, current_dt, force)
                         if plugin_instance:
                             refresh_action = PlaylistRefresh(playlist, plugin_instance)
 
@@ -117,7 +132,9 @@ class RefreshTask:
                         refresh_info = refresh_action.get_refresh_info()
                         refresh_info.update({"refresh_time": current_dt.isoformat(), "image_hash": image_hash})
                         # check if image is the same as current image
-                        if image_hash != latest_refresh.image_hash:
+                        if not manual and self._in_wifi_setup():
+                            logger.info(f"WiFi setup started during refresh, not updating display. | refresh_info: {refresh_info}")
+                        elif force or image_hash != latest_refresh.image_hash:
                             logger.info(f"Updating display. | refresh_info: {refresh_info}")
                             self.display_manager.display_image(image, image_settings=plugin.config.get("image_settings", []))
                         else:
@@ -127,9 +144,16 @@ class RefreshTask:
                         self.device_config.refresh_info = RefreshInfo(**refresh_info)
                         self.device_config.write_config()
 
+                        if not manual:
+                            self.retry_after_failure = False
+                            self.force_refresh = False
+
             except Exception as e:
                 logger.exception('Exception during refresh')
                 self.refresh_result["exception"] = e  # Capture exception
+                if not manual:
+                    logger.info(f"Retrying refresh in {FAILED_REFRESH_RETRY_SECONDS}s")
+                    self.retry_after_failure = True
             finally:
                 self.refresh_event.set()
 
@@ -149,6 +173,19 @@ class RefreshTask:
         else:
             logger.warning("Background refresh task is not running, unable to do a manual update")
 
+    def request_refresh(self, immediate=True):
+        """Redraw the display from the playlist on the next refresh, even if the image is unchanged.
+
+        Used after the WiFi setup screen, which replaces the content without updating the refresh info.
+        """
+        with self.condition:
+            self.force_refresh = True
+            if immediate:
+                self.condition.notify_all()
+
+    def _in_wifi_setup(self):
+        return self.network_monitor is not None and self.network_monitor.in_setup_mode()
+
     def signal_config_change(self):
         """Notify the background thread that config has changed (e.g., interval updated)."""
         if self.running:
@@ -160,7 +197,7 @@ class RefreshTask:
         tz_str = self.device_config.get_config("timezone", default="UTC")
         return datetime.now(pytz.timezone(tz_str))
 
-    def _determine_next_plugin(self, playlist_manager, latest_refresh_info, current_dt):
+    def _determine_next_plugin(self, playlist_manager, latest_refresh_info, current_dt, force=False):
         """Determines the next plugin to refresh based on the active playlist, plugin cycle interval, and current time."""
         playlist = playlist_manager.determine_active_playlist(current_dt)
         if not playlist:
@@ -177,7 +214,7 @@ class RefreshTask:
         plugin_cycle_interval = self.device_config.get_config("plugin_cycle_interval_seconds", default=3600)
         should_refresh = PlaylistManager.should_refresh(latest_refresh_dt, plugin_cycle_interval, current_dt)
 
-        if not should_refresh:
+        if not should_refresh and not force:
             latest_refresh_str = latest_refresh_dt.strftime('%Y-%m-%d %H:%M:%S') if latest_refresh_dt else "None"
             logger.info(f"Not time to update display. | latest_update: {latest_refresh_str} | plugin_cycle_interval: {plugin_cycle_interval}")
             return None, None

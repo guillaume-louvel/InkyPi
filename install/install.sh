@@ -253,6 +253,21 @@ setup_earlyoom_service() {
   sudo systemctl enable --now earlyoom
 }
 
+setup_network_manager() {
+  # Used by the WiFi setup hotspot (src/utils/wifi_manager.py). Takes effect after a reboot.
+  if [ -d /etc/NetworkManager ]; then
+    echo "Configuring NetworkManager for the WiFi setup hotspot."
+    mkdir -p /etc/NetworkManager/conf.d /etc/NetworkManager/dnsmasq-shared.d
+    # WiFi power saving makes the Pi drop off the network when idle.
+    printf '[connection]\nwifi.powersave = 2\n' > /etc/NetworkManager/conf.d/$APPNAME-wifi-powersave.conf
+    # On the setup hotspot, answer every DNS name with the Pi's address so phones open the setup page.
+    echo "address=/#/10.42.0.1" > /etc/NetworkManager/dnsmasq-shared.d/$APPNAME-setup-portal.conf
+    echo_success "\tNetworkManager configured."
+  else
+    echo "NetworkManager not found - the WiFi setup hotspot will not be available."
+  fi
+}
+
 create_venv(){
   echo "Creating python virtual environment. "
   python3 -m venv "$VENV_PATH"
@@ -421,6 +436,7 @@ else
   echo "OS version is not Bookworm - skipping zramswap setup."
 fi
 setup_earlyoom_service
+setup_network_manager
 install_src
 install_cli
 create_venv

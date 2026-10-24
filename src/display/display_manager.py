@@ -1,6 +1,7 @@
 import fnmatch
 import json
 import logging
+import threading
 
 from utils.image_utils import resize_image, change_orientation, apply_image_enhancement
 from display.mock_display import MockDisplay
@@ -36,6 +37,8 @@ class DisplayManager:
         """
         
         self.device_config = device_config
+        # The refresh task and the network monitor can both draw to the display
+        self.lock = threading.Lock()
      
         display_type = device_config.get_config("display_type", default="inky")
 
@@ -70,15 +73,16 @@ class DisplayManager:
         if not hasattr(self, "display"):
             raise ValueError("No valid display instance initialized.")
         
-        # Save the image
-        logger.info(f"Saving image to {self.device_config.current_image_file}")
-        image.save(self.device_config.current_image_file)
+        with self.lock:
+            # Save the image
+            logger.info(f"Saving image to {self.device_config.current_image_file}")
+            image.save(self.device_config.current_image_file)
 
-        # Resize and adjust orientation
-        image = change_orientation(image, self.device_config.get_config("orientation"))
-        image = resize_image(image, self.device_config.get_resolution(), image_settings)
-        if self.device_config.get_config("inverted_image"): image = image.rotate(180)
-        image = apply_image_enhancement(image, self.device_config.get_config("image_settings"))
+            # Resize and adjust orientation
+            image = change_orientation(image, self.device_config.get_config("orientation"))
+            image = resize_image(image, self.device_config.get_resolution(), image_settings)
+            if self.device_config.get_config("inverted_image"): image = image.rotate(180)
+            image = apply_image_enhancement(image, self.device_config.get_config("image_settings"))
 
-        # Pass to the concrete instance to render to the device.
-        self.display.display_image(image, image_settings)
+            # Pass to the concrete instance to render to the device.
+            self.display.display_image(image, image_settings)

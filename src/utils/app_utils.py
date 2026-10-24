@@ -50,10 +50,13 @@ def resolve_path(file_path):
     return str(src_path / file_path)
 
 def get_ip_address():
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.connect(("8.8.8.8", 80))
-        ip_address = s.getsockname()[0]
-    return ip_address
+    """Returns the LAN IP address, or None when there is no network."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return None
 
 def get_wifi_name():
     try:
@@ -126,14 +129,122 @@ def generate_startup_image(dimensions=(800,480)):
     image_draw.text((width/2, y_text), text, anchor="mm", fill=text_color, font=get_font("Jost", text_font_size))
 
     # Draw the IP on a line below
-    ip_text = f"or http://{ip}"
-    ip_text_font_size = width * 0.032
-    bbox = image_draw.textbbox((0, 0), text, font=get_font("Jost", text_font_size))
-    text_height = bbox[3] - bbox[1]
-    ip_y = y_text + text_height * 1.35
-    image_draw.text((width/2, ip_y), ip_text, anchor="mm", fill=text_color, font=get_font("Jost", ip_text_font_size))
+    if ip:
+        ip_text = f"or http://{ip}"
+        ip_text_font_size = width * 0.032
+        bbox = image_draw.textbbox((0, 0), text, font=get_font("Jost", text_font_size))
+        text_height = bbox[3] - bbox[1]
+        ip_y = y_text + text_height * 1.35
+        image_draw.text((width/2, ip_y), ip_text, anchor="mm", fill=text_color, font=get_font("Jost", ip_text_font_size))
 
     return image
+
+def generate_message_image(dimensions, message):
+    """Startup-style screen with a single status message, e.g. while connecting to WiFi."""
+    width, height = dimensions
+    image = Image.new("RGBA", dimensions, (255, 255, 255))
+    image_draw = ImageDraw.Draw(image)
+
+    image_draw.text((width/2, height/2), "inkypi", anchor="mm", fill=(0, 0, 0), font=get_font("Jost", width * 0.145))
+    font = _fit_font(image_draw, message, width * 0.9, width * 0.04)
+    image_draw.text((width/2, height * 3 / 4), message, anchor="mm", fill=(0, 0, 0), font=font)
+    return image
+
+def generate_wifi_setup_image(dimensions, ssid, password, url, error=None):
+    """Screen shown while the WiFi setup hotspot is running: how to join it, plus a QR code that joins it."""
+    width, height = dimensions
+    image = Image.new("RGBA", dimensions, (255, 255, 255))
+    image_draw = ImageDraw.Draw(image)
+    black, red = (0, 0, 0), (200, 0, 0)
+    margin = min(width, height) * 0.06
+
+    landscape = width >= height
+    qr_size = int(min(height * 0.62, width * 0.38) if landscape else min(width * 0.55, height * 0.38))
+    qr = _wifi_qr_image(ssid, password, qr_size)
+
+    title_font = get_font("Jost", min(width, height) * 0.1, "bold")
+    image_draw.text((margin, margin), "WiFi setup", anchor="lt", fill=black, font=title_font)
+    title_bottom = image_draw.textbbox((margin, margin), "WiFi setup", anchor="lt", font=title_font)[3]
+
+    qr_side = qr.width if qr else 0
+
+    if landscape:
+        qr_pos = (int(margin), int(title_bottom + (height - title_bottom - qr_side) / 2))
+        text_x = qr_pos[0] + qr_side + (margin if qr else 0)
+        text_y = title_bottom + margin * 0.8
+    else:
+        qr_pos = (int((width - qr_side) / 2), int(title_bottom + margin * 0.8))
+        text_x = margin
+        text_y = qr_pos[1] + qr_side + margin * 0.8
+    if qr:
+        image.paste(qr, qr_pos)
+
+    text_width = width - text_x - margin
+    base_size = min(width, height) * 0.055
+    lines = [
+        ("Scan the code, or join this WiFi:", "normal", black),
+        (ssid, "bold", black),
+        (f"Password: {password}", "bold", black),
+        ("The setup page opens by itself.", "normal", black),
+        (f"If not, go to {url}", "normal", black),
+    ]
+    if error:
+        lines.append((error, "normal", red))
+
+    for text, weight, color in lines:
+        for line in _wrap_text(image_draw, text, text_width, get_font("Jost", base_size, weight)):
+            font = _fit_font(image_draw, line, text_width, base_size, weight)
+            image_draw.text((text_x, text_y), line, anchor="lt", fill=color, font=font)
+            text_y += base_size * 1.35
+        text_y += base_size * 0.25
+
+    return image
+
+def _wifi_qr_image(ssid, password, size):
+    """QR code that phones read as 'join this WiFi network'. None if the qrcode package is missing."""
+    try:
+        import qrcode
+    except ImportError:
+        logger.warning("qrcode package not installed, WiFi setup screen will have no QR code")
+        return None
+
+    def escape(value):
+        return "".join("\\" + c if c in '\\;,:"' else c for c in value)
+
+    qr = qrcode.QRCode(border=1, error_correction=qrcode.constants.ERROR_CORRECT_M)
+    qr.add_data(f"WIFI:T:WPA;S:{escape(ssid)};P:{escape(password)};;")
+    qr.make(fit=True)
+    matrix = qr.get_matrix()
+
+    box = max(1, size // len(matrix))
+    qr_image = Image.new("RGB", (box * len(matrix), box * len(matrix)), (255, 255, 255))
+    draw = ImageDraw.Draw(qr_image)
+    for y, row in enumerate(matrix):
+        for x, filled in enumerate(row):
+            if filled:
+                draw.rectangle([x * box, y * box, (x + 1) * box - 1, (y + 1) * box - 1], fill=(0, 0, 0))
+    return qr_image
+
+def _fit_font(image_draw, text, max_width, size, weight="normal"):
+    """Largest font up to `size` that fits `text` in `max_width`."""
+    font = get_font("Jost", size, weight)
+    while size > 8 and image_draw.textlength(text, font=font) > max_width:
+        size *= 0.9
+        font = get_font("Jost", size, weight)
+    return font
+
+def _wrap_text(image_draw, text, max_width, font):
+    lines, current = [], ""
+    for word in text.split():
+        candidate = f"{current} {word}".strip()
+        if current and image_draw.textlength(candidate, font=font) > max_width:
+            lines.append(current)
+            current = word
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
 
 def parse_form(request_form):
     request_dict = request_form.to_dict()

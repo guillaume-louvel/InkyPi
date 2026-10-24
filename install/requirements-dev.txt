@@ -12,6 +12,7 @@ icalendar==6.3.2
 recurring-ical-events==3.8.0
 psutil==7.2.2
 feedparser==6.0.11
+qrcode==8.2
 waitress==3.0.2
 astral>=3.1
 pytest==9.0.3

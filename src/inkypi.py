@@ -30,8 +30,10 @@ from blueprints.settings import settings_bp
 from blueprints.plugin import plugin_bp
 from blueprints.playlist import playlist_bp
 from blueprints.apikeys import apikeys_bp
+from blueprints.wifi import wifi_bp
 from jinja2 import ChoiceLoader, FileSystemLoader
 from plugins.plugin_registry import load_plugins
+from utils.wifi_manager import NetworkMonitor
 from waitress import serve
 
 
@@ -64,12 +66,19 @@ device_config = Config()
 display_manager = DisplayManager(device_config)
 refresh_task = RefreshTask(device_config, display_manager)
 
+# WiFi setup hotspot when offline (Raspberry Pi with NetworkManager only)
+network_monitor = None
+if not DEV_MODE and NetworkMonitor.is_supported():
+    network_monitor = NetworkMonitor(device_config, display_manager, refresh_task)
+    refresh_task.network_monitor = network_monitor
+
 load_plugins(device_config.get_plugins())
 
 # Store dependencies
 app.config['DEVICE_CONFIG'] = device_config
 app.config['DISPLAY_MANAGER'] = display_manager
 app.config['REFRESH_TASK'] = refresh_task
+app.config['NETWORK_MONITOR'] = network_monitor
 
 # Set additional parameters
 app.config['MAX_FORM_PARTS'] = 10_000
@@ -80,6 +89,7 @@ app.register_blueprint(settings_bp)
 app.register_blueprint(plugin_bp)
 app.register_blueprint(playlist_bp)
 app.register_blueprint(apikeys_bp)
+app.register_blueprint(wifi_bp)
 
 # Register opener for HEIF/HEIC images
 register_heif_opener()
@@ -95,6 +105,9 @@ if __name__ == '__main__':
         img = generate_startup_image(device_config.get_resolution())
         display_manager.display_image(img)
         device_config.update_value("startup", False, write=True)
+
+    if network_monitor:
+        network_monitor.start()
 
     try:
         # Run the Flask app
@@ -114,4 +127,6 @@ if __name__ == '__main__':
 
         serve(app, host="0.0.0.0", port=PORT, threads=1)
     finally:
+        if network_monitor:
+            network_monitor.stop()
         refresh_task.stop()

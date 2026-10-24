@@ -91,6 +91,16 @@ Note:
 
 For more details, including instructions on how to image your microSD with Raspberry Pi OS, refer to [installation.md](./docs/installation.md). You can also checkout [this YouTube tutorial](https://youtu.be/L5PvQj1vfC4).
 
+## WiFi Setup
+Set your WiFi network when imaging the microSD card with Raspberry Pi Imager. After that, InkyPi can change networks by itself, e.g. when you move it to another home:
+
+- If InkyPi has no network for 90 seconds after booting, or loses it for 3 minutes, it starts a WiFi hotspot called **InkyPi-Setup** and shows its password and a QR code on the display.
+- Join that network from your phone (scan the QR code). The setup page opens by itself, or go to `http://10.42.0.1`. Pick your network and enter its password.
+- InkyPi then connects, and shows its new address on the display. If the connection fails, the setup screen comes back with an error message.
+- While the hotspot is up and nobody is connected to it, InkyPi retries its saved networks every 5 minutes, so it recovers by itself when your router comes back.
+
+The hotspot needs NetworkManager, the default on Raspberry Pi OS Bookworm and later. The installer also turns off WiFi power saving, which otherwise makes the Pi drop off the network when idle.
+
 ## Update
 To update your InkyPi with the latest code changes, follow these steps:
 1. Navigate to the project directory:

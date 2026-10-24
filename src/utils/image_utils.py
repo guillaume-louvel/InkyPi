@@ -7,8 +7,13 @@ import hashlib
 import tempfile
 import subprocess
 import shutil
+import signal
 
 logger = logging.getLogger(__name__)
+
+# Upper bound on a Chromium render, on top of any page timeout, so a page stuck
+# on a slow network can't hang the refresh thread forever.
+SCREENSHOT_TIMEOUT_SECONDS = 90
 
 def get_image(image_url):
     response = requests.get(image_url, timeout=30)
@@ -89,6 +94,7 @@ def compute_image_hash(image):
 
 def take_screenshot_html(html_str, dimensions, timeout_ms=None):
     image = None
+    html_file_path = None
     try:
         # Create a temporary HTML file
         with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as html_file:
@@ -97,11 +103,12 @@ def take_screenshot_html(html_str, dimensions, timeout_ms=None):
 
         image = take_screenshot(html_file_path, dimensions, timeout_ms)
 
-        # Remove html file
-        os.remove(html_file_path)
-
     except Exception as e:
         logger.error(f"Failed to take screenshot: {str(e)}")
+    finally:
+        # Remove html file
+        if html_file_path and os.path.exists(html_file_path):
+            os.remove(html_file_path)
 
     return image
 
@@ -116,8 +123,21 @@ def _find_chromium_binary():
     return None
 
 
+def _run_browser(command, timeout):
+    """Run the browser and return its exit code. On timeout, kill it with all its child processes."""
+    with subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                          start_new_session=True) as process:
+        try:
+            return process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            raise
+
+
 def take_screenshot(target, dimensions, timeout_ms=None):
     image = None
+    img_file_path = None
     try:
         # Find available browser binary
         browser = _find_chromium_binary()
@@ -152,22 +172,26 @@ def take_screenshot(target, dimensions, timeout_ms=None):
         ]
         if timeout_ms:
             command.append(f"--timeout={timeout_ms}")
-        result = subprocess.run(command, capture_output=True, check=False)
+        process_timeout = SCREENSHOT_TIMEOUT_SECONDS + (timeout_ms or 0) / 1000
+        returncode = _run_browser(command, process_timeout)
 
         # Check if the process failed or the output file is missing
-        if result.returncode != 0 or not os.path.exists(img_file_path):
-            logger.error(f"Failed to take screenshot (return code: {result.returncode})")
+        if returncode != 0 or not os.path.exists(img_file_path):
+            logger.error(f"Failed to take screenshot (return code: {returncode})")
             return None
 
         # Load the image using PIL
         with Image.open(img_file_path) as img:
             image = img.copy()
 
-        # Remove image files
-        os.remove(img_file_path)
-
+    except subprocess.TimeoutExpired:
+        logger.error(f"Failed to take screenshot: browser did not finish within {process_timeout:.0f}s")
     except Exception as e:
         logger.error(f"Failed to take screenshot: {str(e)}")
+    finally:
+        # Remove image files
+        if img_file_path and os.path.exists(img_file_path):
+            os.remove(img_file_path)
 
     return image
 

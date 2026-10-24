@@ -14,7 +14,7 @@ KillSignal=SIGINT
 StandardOutput=journal
 StandardError=journal
 CPUQuota=40%
-MemoryMax=200M
+MemoryMax=300M
 
 [Install]
 WantedBy=multi-user.target

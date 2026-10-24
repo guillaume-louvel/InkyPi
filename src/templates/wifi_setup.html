@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InkyPi WiFi Setup</title>
+    <!-- Self-contained on purpose: the phone has no internet while on the setup hotspot. -->
+    <style>
+        :root { --bg: #f4f4f1; --card: #fff; --text: #1d1d1b; --muted: #6b6b66; --line: #deded8;
+                --accent: #1d1d1b; --error: #b3261e; --ok: #1e6b35; }
+        @media (prefers-color-scheme: dark) {
+            :root { --bg: #161615; --card: #22221f; --text: #ececea; --muted: #a2a29c; --line: #3a3a36;
+                    --accent: #ececea; --error: #f2877f; --ok: #7fd49a; }
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text);
+               font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        main { max-width: 440px; margin: 0 auto; padding: 24px 16px 40px; }
+        h1 { font-size: 26px; margin: 0 0 4px; }
+        p { margin: 0 0 16px; color: var(--muted); }
+        .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+        .networks { list-style: none; margin: 0; padding: 0; }
+        .networks label { display: flex; align-items: center; gap: 10px; padding: 10px 2px;
+                          border-bottom: 1px solid var(--line); cursor: pointer; }
+        .networks li:last-child label { border-bottom: 0; }
+        .networks .name { flex: 1; overflow-wrap: anywhere; }
+        .networks .meta { color: var(--muted); font-size: 13px; white-space: nowrap; }
+        label.field { display: block; font-weight: 600; margin: 14px 0 6px; }
+        input[type=text], input[type=password] { width: 100%; padding: 12px; font-size: 16px;
+               border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+        .show { display: flex; align-items: center; gap: 8px; margin-top: 8px; color: var(--muted); font-size: 14px; }
+        button { width: 100%; margin-top: 18px; padding: 14px; font-size: 17px; font-weight: 600; border: 0;
+                 border-radius: 10px; background: var(--accent); color: var(--bg); cursor: pointer; }
+        button:disabled { opacity: .5; }
+        .error { color: var(--error); font-weight: 600; }
+        .ok { color: var(--ok); font-weight: 600; }
+        .hint { font-size: 14px; }
+        [hidden] { display: none !important; }
+    </style>
+</head>
+<body>
+<main>
+    <h1>WiFi setup</h1>
+    {% if not supported %}
+        <p>WiFi setup is not available on this device (it needs NetworkManager and a WiFi adapter).</p>
+    {% elif not status.setup_mode %}
+        <p class="ok">This InkyPi is connected to a network. Nothing to set up.</p>
+        <p><a href="/">Back to InkyPi</a></p>
+    {% else %}
+        <p>Choose the network this InkyPi should use. Not listed? Some models, like the Pi Zero&nbsp;2&nbsp;W, only see 2.4&nbsp;GHz networks.</p>
+
+        {% if status.error %}<div class="card error" id="serverError">{{ status.error }}</div>{% endif %}
+
+        <form id="wifiForm" class="card" autocomplete="off">
+            <ul class="networks">
+                {% for network in status.networks %}
+                <li><label>
+                    <input type="radio" name="network" value="{{ network.ssid }}" {% if loop.first %}checked{% endif %}
+                           data-secure="{{ 'yes' if network.security and network.security != '--' else 'no' }}">
+                    <span class="name">{{ network.ssid }}</span>
+                    <span class="meta">{{ network.signal }}%{% if network.security and network.security != '--' %} · 🔒{% endif %}</span>
+                </label></li>
+                {% endfor %}
+                <li><label>
+                    <input type="radio" name="network" value="" data-secure="yes" {% if not status.networks %}checked{% endif %}>
+                    <span class="name">Other network…</span>
+                </label></li>
+            </ul>
+
+            <div id="otherField" {% if status.networks %}hidden{% endif %}>
+                <label class="field" for="ssid">Network name</label>
+                <input type="text" id="ssid" maxlength="32" autocapitalize="none" autocorrect="off" spellcheck="false">
+            </div>
+
+            <div id="passwordField">
+                <label class="field" for="password">Password</label>
+                <input type="password" id="password" maxlength="63" autocapitalize="none" autocorrect="off" spellcheck="false">
+                <label class="show"><input type="checkbox" id="showPassword"> Show password</label>
+            </div>
+
+            <p class="error" id="formError" hidden></p>
+            <button type="submit" id="submitButton">Connect</button>
+            <p class="hint" style="margin: 12px 0 0">
+                After you tap Connect, your phone leaves the <strong>{{ hotspot_ssid }}</strong> network
+                and this page closes. Watch the InkyPi screen: it shows its new address when connected
+                (about a minute), or the setup screen again if the connection failed.
+            </p>
+        </form>
+
+        <div class="card" id="doneCard" hidden>
+            <p class="ok" id="doneMessage" style="margin:0"></p>
+        </div>
+    {% endif %}
+</main>
+<script>
+(function () {
+    const form = document.getElementById("wifiForm");
+    if (!form) return;
+
+    const ssidInput = document.getElementById("ssid");
+    const passwordInput = document.getElementById("password");
+    const otherField = document.getElementById("otherField");
+    const passwordField = document.getElementById("passwordField");
+    const formError = document.getElementById("formError");
+    const submitButton = document.getElementById("submitButton");
+
+    function selected() { return form.querySelector("input[name=network]:checked"); }
+
+    function updateFields() {
+        const choice = selected();
+        const isOther = !choice || choice.value === "";
+        otherField.hidden = !isOther;
+        passwordField.hidden = !isOther && choice.dataset.secure === "no";
+    }
+
+    function showError(message) {
+        formError.textContent = message;
+        formError.hidden = false;
+    }
+
+    form.addEventListener("change", updateFields);
+    document.getElementById("showPassword").addEventListener("change", (e) => {
+        passwordInput.type = e.target.checked ? "text" : "password";
+    });
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        formError.hidden = true;
+
+        const choice = selected();
+        const ssid = (!choice || choice.value === "") ? ssidInput.value.trim() : choice.value;
+        const password = passwordField.hidden ? "" : passwordInput.value;
+        if (!ssid) return showError("Choose a network or enter its name.");
+        if (!passwordField.hidden && password && (password.length < 8 || password.length > 63)) {
+            return showError("WiFi passwords are 8 to 63 characters long.");
+        }
+
+        submitButton.disabled = true;
+        submitButton.textContent = "Sending…";
+        try {
+            const response = await fetch("/wifi/connect", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ssid, password })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || "Something went wrong.");
+            form.hidden = true;
+            const serverError = document.getElementById("serverError");
+            if (serverError) serverError.hidden = true;
+            document.getElementById("doneMessage").textContent = data.message;
+            document.getElementById("doneCard").hidden = false;
+        } catch (error) {
+            showError(error.message === "Failed to fetch"
+                ? "Lost contact with InkyPi. Rejoin the setup network and try again."
+                : error.message);
+            submitButton.disabled = false;
+            submitButton.textContent = "Connect";
+        }
+    });
+
+    updateFields();
+})();
+</script>
+</body>
+</html>

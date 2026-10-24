@@ -86,6 +86,14 @@ remove_files() {
     echo_success "\tInstallation directory $INSTALL_PATH does not exist."
   fi
 
+  # Remove the NetworkManager settings for the WiFi setup hotspot
+  rm -f "/etc/NetworkManager/conf.d/$APPNAME-wifi-powersave.conf" \
+        "/etc/NetworkManager/dnsmasq-shared.d/$APPNAME-setup-portal.conf"
+  if command -v nmcli > /dev/null; then
+    nmcli connection delete "$APPNAME-hotspot" > /dev/null 2>&1
+  fi
+  echo_success "\tWiFi setup hotspot settings removed."
+
   # Remove the executable
   if [ -f "$BINPATH/$APPNAME" ]; then
     rm -f "$BINPATH/$APPNAME"
