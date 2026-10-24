@@ -82,6 +82,19 @@ globale, bien trop lourde pour un Zero 2W.
 - **Sens du RER** (point 5) : les destinations réelles sont bien « Boissy-Saint-Léger » et
   « Saint-Germain-en-Laye ».
 
+## Ajouts du 24/10 (soir)
+
+- **Heure à l'arrêt** (`atStop`, 08:30) : bus, train et itinéraire calculés pour cette heure.
+  `stop-monitoring` n'a qu'environ une heure d'horizon : au-delà, `_prochains()` complète avec
+  `v2/navitia/stop_areas/<id>/departures` (temps réel si connu, sinon théorique, marqué « ≈ »),
+  en écartant les doublons (même ligne à moins de 3 min). Hypothèse à vérifier sur la vraie API :
+  le format de `departures` (`display_informations.code/direction`, `route.line.id`,
+  `stop_date_time.data_freshness`).
+- **Météo** (`meteo.py`) : Open-Meteo, coordonnées de l'arrêt de bus via
+  `v2/navitia/stop_areas/<id>` (`coord`). Hypothèse à vérifier : `minutely_15=precipitation`.
+- **Playlists** (cœur d'InkyPi, `model.py` / `refresh_task.py`) : jours de la semaine et intervalle
+  propre à chaque playlist, réveil pile aux débuts et fins de playlist.
+
 ## Points à vérifier en priorité avec la vraie API
 
 Hypothèses de départ, conservées pour l'historique (voir ci-dessus) :

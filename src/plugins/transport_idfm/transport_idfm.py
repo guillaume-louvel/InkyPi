@@ -4,8 +4,9 @@ from datetime import datetime, timedelta
 import pytz
 
 from plugins.base_plugin.base_plugin import BasePlugin
+from plugins.transport_idfm import meteo
 from plugins.transport_idfm.idfm_api import (Etat, Passage, PrimClient, classer, code_ligne, filtrer,
-                                             liste, norm)
+                                             liste, nom_gare, norm)
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,15 @@ DEFAUTS = {
     "rerExclude": "Boissy, Sucy, Varenne, Saint-Maur, Champigny",
     "rerCount": "3",
     "destinationStop": "Nanterre Préfecture",
+    "atStop": "08:30",
+    "bikeFrom": "08:15",
+    "bikeTo": "09:00",
 }
+
+MARGE_BUS = timedelta(minutes=3)       # bus montrés un peu avant l'heure visée à l'arrêt
+MARGE_RER = timedelta(minutes=2)
+TRAJET_BUS = timedelta(minutes=8)      # si l'itinéraire est indisponible
+DOUBLON = timedelta(minutes=3)          # même ligne à moins de 3 min : même bus
 
 
 def hhmm(d):
@@ -46,6 +55,53 @@ class TransportIdfm(BasePlugin):
     def _reglage(self, settings, cle):
         v = settings.get(cle)
         return v if v not in (None, "") else DEFAUTS.get(cle, "")
+
+    def _heure(self, settings, cle, maintenant):
+        """Réglage « HH:MM » -> datetime du jour (None si invalide)."""
+        try:
+            heures, minutes = map(int, self._reglage(settings, cle).split(":"))
+            return maintenant.replace(hour=heures, minute=minutes, second=0, microsecond=0)
+        except ValueError:
+            return None
+
+    def _a_l_arret(self, settings, maintenant):
+        """Heure à laquelle on sera à l'arrêt de bus, ou maintenant si elle est passée."""
+        cible = self._heure(settings, "atStop", maintenant)
+        return max(cible, maintenant) if cible else maintenant
+
+    def _creneau_velo(self, settings, maintenant):
+        debut = self._heure(settings, "bikeFrom", maintenant)
+        fin = self._heure(settings, "bikeTo", maintenant)
+        if not debut or not fin or fin <= maintenant or fin <= debut:
+            return maintenant, maintenant + timedelta(minutes=45)
+        return max(debut, maintenant), fin
+
+    def _coordonnees(self, client, settings, stop_id):
+        """Coordonnées de l'arrêt de bus pour la météo, mises en cache dans les réglages."""
+        cache = settings.get("_meteoCoord") or {}
+        if cache.get("arret") != stop_id:
+            lat, lon = client.coordonnees(stop_id)
+            cache = {"arret": stop_id, "lat": lat, "lon": lon}
+            settings["_meteoCoord"] = cache
+        return cache["lat"], cache["lon"]
+
+    @staticmethod
+    def _prochains(client, stop_id, temps_reel, lignes, contient, exclure, nombre, a_partir_de):
+        """Passages à partir d'une heure : le temps réel d'abord, complété par les départs du
+        calculateur quand l'heure dépasse l'horizon du temps réel (ex. bus de 8h30 vus à 7h30)."""
+        res = [p for p in filtrer(temps_reel, lignes, contient, exclure, 99) if p.heure >= a_partir_de]
+        if len(res) < nombre:
+            try:
+                prevus = filtrer(client.departs(stop_id, a_partir_de), lignes, contient, exclure, 99)
+            except Exception as ex:  # noqa: BLE001 - on garde le temps réel
+                logger.warning(f"Départs théoriques indisponibles : {ex}")
+                prevus = []
+            for p in prevus:
+                deja = any(code_ligne(q.ligne_ref) == code_ligne(p.ligne_ref) and abs(q.heure - p.heure) <= DOUBLON
+                           for q in res)
+                if not deja:
+                    res.append(p)
+        return sorted(res, key=lambda p: p.heure)[:nombre]
 
     def _resoudre(self, client, settings, cle):
         """Accepte un identifiant (STIF:… ou stop_area:…) ou un nom d'arrêt.
@@ -81,53 +137,79 @@ class TransportIdfm(BasePlugin):
     def _collecter(self, client, s):
         e = Etat()
         noms = {}
-        try:
-            bus_id, noms["bus"] = self._resoudre(client, s, "busStop")
-            noms_lignes = self._lignes(client, s, bus_id)
-            demandees = liste(self._reglage(s, "busLines"))
-            demandees_n = {norm(d) for d in demandees}
-            codes = [code for code, nom in noms_lignes.items() if norm(nom) in demandees_n]
-            ps = client.passages(client.vers_siri(bus_id))
-            e.bus = filtrer(ps, demandees + codes,
-                            self._reglage(s, "busDestination"), [],
-                            int(self._reglage(s, "busCount")))
-            for p in e.bus:
-                p.ligne = noms_lignes.get(code_ligne(p.ligne_ref), p.ligne)
-        except Exception as ex:  # noqa: BLE001 - affiché à l'écran
-            logger.exception("Bus")
-            e.erreurs.append(f"Bus : {ex}")
-        try:
-            rer_id, noms["rer"] = self._resoudre(client, s, "rerStop")
-            ps = client.passages(client.vers_siri(rer_id), self._reglage(s, "rerLineRef"))
-            e.rer = filtrer(ps, [], "", liste(self._reglage(s, "rerExclude")),
-                            int(self._reglage(s, "rerCount")))
-        except Exception as ex:  # noqa: BLE001
-            logger.exception("RER")
-            e.erreurs.append(f"RER : {ex}")
-        perturbations = None
-        try:
-            perturbations = client.perturbations(self._reglage(s, "rerLineRef"))
-            e.trafic_connu = True
-        except Exception as ex:  # noqa: BLE001
-            logger.exception("Info trafic")
-            e.trafic_connu = False
-            e.erreurs.append(f"Info trafic : {ex}")
+        maintenant = datetime.now(client.tz)
+        e.a_l_arret = self._a_l_arret(s, maintenant)
+        ids = {}
+        for cle, nom in (("busStop", "bus"), ("rerStop", "rer"), ("destinationStop", "dest")):
+            try:
+                ids[nom], noms[nom] = self._resoudre(client, s, cle)
+            except Exception as ex:  # noqa: BLE001 - affiché à l'écran
+                logger.exception(f"Arrêt {cle}")
+                e.erreurs.append(f"Arrêt : {ex}")
+        bus_id, rer_id, dest_id = ids.get("bus"), ids.get("rer"), ids.get("dest")
+
+        # Itinéraire pour l'heure où l'on est à l'arrêt : arrivée estimée et train à prendre
         trajet = None
-        try:
-            dest_id, noms["dest"] = self._resoudre(client, s, "destinationStop")
-            if "bus" in noms:
-                trajet = client.itineraire(bus_id, dest_id)
+        if bus_id and dest_id:
+            try:
+                trajet = client.itineraire(bus_id, dest_id, e.a_l_arret)
                 if trajet:
                     e.depart_trajet, e.arrivee = trajet.depart, trajet.arrivee
-        except Exception as ex:  # noqa: BLE001
-            logger.exception("Itinéraire")
-            e.erreurs.append(f"Itinéraire : {ex}")
-        if perturbations is not None:
+            except Exception as ex:  # noqa: BLE001
+                logger.exception("Itinéraire")
+                e.erreurs.append(f"Itinéraire : {ex}")
+
+        if bus_id:
+            try:
+                noms_lignes = self._lignes(client, s, bus_id)
+                demandees = liste(self._reglage(s, "busLines"))
+                demandees_n = {norm(d) for d in demandees}
+                codes = [code for code, nom in noms_lignes.items() if norm(nom) in demandees_n]
+                e.bus = self._prochains(client, bus_id, client.passages(client.vers_siri(bus_id)),
+                                        demandees + codes, self._reglage(s, "busDestination"), [],
+                                        int(self._reglage(s, "busCount")),
+                                        max(e.a_l_arret - MARGE_BUS, maintenant))
+                for p in e.bus:
+                    p.ligne = noms_lignes.get(code_ligne(p.ligne_ref), p.ligne)
+            except Exception as ex:  # noqa: BLE001
+                logger.exception("Bus")
+                e.erreurs.append(f"Bus : {ex}")
+
+        if rer_id:
+            try:
+                rer_ref = self._reglage(s, "rerLineRef")
+                # Les trains à partir de celui de l'itinéraire
+                train = next((depart for arret, depart in (trajet.montees if trajet else [])
+                              if depart and nom_gare(arret) == nom_gare(noms["rer"])), None)
+                a_partir_de = train - MARGE_RER if train else e.a_l_arret + TRAJET_BUS
+                e.rer = self._prochains(client, rer_id, client.passages(client.vers_siri(rer_id), rer_ref),
+                                        [code_ligne(rer_ref)], "", liste(self._reglage(s, "rerExclude")),
+                                        int(self._reglage(s, "rerCount")), max(a_partir_de, maintenant))
+            except Exception as ex:  # noqa: BLE001
+                logger.exception("RER")
+                e.erreurs.append(f"RER : {ex}")
+
+        try:
+            perturbations = client.perturbations(self._reglage(s, "rerLineRef"),
+                                                 e.a_l_arret + timedelta(minutes=90))
+            e.trafic_connu = True
             # Sans itinéraire, on ne connaît que la gare RER de départ et la destination
             arrets = trajet.arrets if trajet else []
             extremites = trajet.extremites if trajet else [
                 noms.get("rer", self._reglage(s, "rerStop")), noms.get("dest", self._reglage(s, "destinationStop"))]
             e.perturbations, e.infos_trafic = classer(perturbations, arrets, extremites)
+        except Exception as ex:  # noqa: BLE001
+            logger.exception("Info trafic")
+            e.erreurs.append(f"Info trafic : {ex}")
+
+        if bus_id and s.get("hideWeather") != "true":
+            try:
+                lat, lon = self._coordonnees(client, s, bus_id)
+                debut, fin = self._creneau_velo(s, maintenant)
+                e.meteo = meteo.prevision(lat, lon, client.tz, debut, fin)
+            except Exception as ex:  # noqa: BLE001
+                logger.exception("Météo")
+                e.erreurs.append(f"Météo : {ex}")
         return e, noms
 
     def _demo(self, maintenant):
@@ -145,7 +227,13 @@ class TransportIdfm(BasePlugin):
                            "technique. Retards de 10 à 15 min à prévoir."],
             depart_trajet=m(3), arrivee=m(52),
         )
+        e.bus[3].prevu = True
         e.trafic_connu = True
+        e.a_l_arret = m(3)
+        e.meteo = meteo.Meteo(temperature=7.4, ressenti=4.1, code=3, jour=True, debut=m(0), fin=m(45),
+                              t_min=6.8, t_max=8.2, ressenti_min=3.6, pluie_mm=1.4, pluie_proba=80,
+                              pluie_debut=m(20), vent=18, rafales=42, code_trajet=61,
+                              alertes=[f"Pluie dès {meteo.h(m(20))}"])
         return e, {"bus": "Mon arrêt (démo)", "rer": "Joinville-le-Pont", "dest": "Nanterre-Préfecture"}
 
     # ------------------------------------------------------------------ rendu
@@ -172,7 +260,7 @@ class TransportIdfm(BasePlugin):
         def bus_vue(p):
             mins = int((p.heure - maintenant).total_seconds() // 60) if p.heure else None
             return {
-                "ligne": p.ligne, "heure": hhmm(p.heure), "annule": p.annule,
+                "ligne": p.ligne, "heure": hhmm(p.heure), "annule": p.annule, "prevu": p.prevu,
                 "dans": (("à l'approche" if mins <= 0 else f"{mins} min")
                          if compte_a_rebours and mins is not None else ""),
             }
@@ -187,9 +275,12 @@ class TransportIdfm(BasePlugin):
             "maj": hhmm(maintenant) if settings.get("showRefreshTime") == "true" else "",
             "bus": [bus_vue(p) for p in etat.bus],
             "bus_destination": self._reglage(settings, "busDestination"),
+            "a_l_arret": (hhmm(etat.a_l_arret)
+                          if etat.a_l_arret and etat.a_l_arret > maintenant + timedelta(minutes=5) else ""),
+            "meteo": etat.meteo.vue() if etat.meteo else None,
             "rer_label": self._reglage(settings, "rerLabel"),
             "rer_titre": f"→ {noms.get('dest', '')}" if noms.get("dest") else noms.get("rer", ""),
-            "rer": [{"heure": hhmm(p.heure), "destination": p.destination, "annule": p.annule}
+            "rer": [{"heure": hhmm(p.heure), "destination": p.destination, "annule": p.annule, "prevu": p.prevu}
                     for p in etat.rer],
             "perturbation": etat.perturbations[0] if etat.perturbations else "",
             "info_trafic": etat.infos_trafic[0] if etat.infos_trafic else "",

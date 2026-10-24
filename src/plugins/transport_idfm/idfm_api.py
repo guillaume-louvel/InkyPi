@@ -48,6 +48,7 @@ class Passage:
     heure: datetime | None
     statut: str = ""
     ligne_ref: str = ""  # STIF:Line::C01135: — PublishedLineName est souvent absent
+    prevu: bool = False  # horaire théorique, pas temps réel
 
     @property
     def annule(self) -> bool:
@@ -67,6 +68,7 @@ class Trajet:
     arrivee: datetime | None
     arrets: list[str] = field(default_factory=list)       # tous les arrêts traversés
     extremites: list[str] = field(default_factory=list)   # où l'on monte et descend
+    montees: list[tuple[str, datetime | None]] = field(default_factory=list)  # (arrêt, heure de départ)
 
 
 @dataclass
@@ -76,6 +78,8 @@ class Etat:
     perturbations: list[str] = field(default_factory=list)  # gênantes pour le trajet
     infos_trafic: list[str] = field(default_factory=list)   # sur la ligne, sans gêner le trajet
     trafic_connu: bool = False
+    a_l_arret: datetime | None = None   # heure visée à l'arrêt de bus
+    meteo: object = None
     arrivee: datetime | None = None
     depart_trajet: datetime | None = None
     erreurs: list[str] = field(default_factory=list)
@@ -106,6 +110,11 @@ class PrimClient:
             raise RuntimeError(f"arrêt introuvable : {texte}")
         return lieux[0]["id"], lieux[0].get("name", texte)
 
+    def coordonnees(self, stop_area_id: str) -> tuple[float, float]:
+        data = self.get(f"v2/navitia/stop_areas/{stop_area_id}")
+        coord = (data.get("stop_areas") or [{}])[0].get("coord") or {}
+        return float(coord["lat"]), float(coord["lon"])
+
     @staticmethod
     def vers_siri(navitia_id: str) -> str:
         """stop_area:IDFM:71517 -> STIF:StopArea:SP:71517:"""
@@ -127,6 +136,27 @@ class PrimClient:
         if line_ref:
             params["LineRef"] = line_ref
         return self.extraire_passages(self.get("stop-monitoring", params))
+
+    def departs(self, stop_area_id: str, a_partir_de: datetime, nombre: int = 40) -> list[Passage]:
+        """Départs du calculateur Navitia à partir d'une heure donnée : temps réel quand il
+        est connu, sinon horaire théorique. Sert au-delà de l'horizon de stop-monitoring."""
+        data = self.get(f"v2/navitia/stop_areas/{stop_area_id}/departures", {
+            "from_datetime": a_partir_de.strftime("%Y%m%dT%H%M%S"),
+            "data_freshness": "realtime", "count": nombre,
+        })
+        res = []
+        for d in data.get("departures") or []:
+            info = d.get("display_informations") or {}
+            moment = d.get("stop_date_time") or {}
+            ligne_id = ((d.get("route") or {}).get("line") or {}).get("id", "")
+            res.append(Passage(
+                ligne=str(info.get("code") or code_ligne(ligne_id)),
+                destination=str(info.get("direction") or "?"),
+                heure=self._date_navitia(moment.get("departure_date_time")),
+                ligne_ref=ligne_id,
+                prevu=moment.get("data_freshness") != "realtime",
+            ))
+        return sorted((p for p in res if p.heure), key=lambda p: p.heure)
 
     def heure(self, s: str | None) -> datetime | None:
         if not s:
@@ -166,19 +196,19 @@ class PrimClient:
                 for l in data.get("lines") or [] if l.get("code") and l.get("id")}
 
     # ------------------------------------------------------------------ info trafic
-    def perturbations(self, line_ref: str, fenetre: timedelta = timedelta(minutes=90)) -> list[Perturbation]:
-        """Perturbations de la ligne qui s'appliquent d'ici `fenetre`."""
+    def perturbations(self, line_ref: str, jusqua: datetime | None = None) -> list[Perturbation]:
+        """Perturbations de la ligne qui s'appliquent entre maintenant et `jusqua` (+90 min par défaut)."""
         data = self.get(f"v2/navitia/lines/line:IDFM:{code_ligne(line_ref)}/line_reports")
-        return self.extraire_perturbations(data, fenetre)
+        return self.extraire_perturbations(data, jusqua)
 
-    def extraire_perturbations(self, data: dict, fenetre: timedelta = timedelta(minutes=90)) -> list[Perturbation]:
+    def extraire_perturbations(self, data: dict, jusqua: datetime | None = None) -> list[Perturbation]:
         """Garde les perturbations qui touchent la ligne entière ou un tronçon (pas les
         ascenseurs, rattachés à une gare) et dont une période d'application recoupe
-        [maintenant, +fenetre]. Le champ severity.effect n'est pas fiable : les pannes
+        [maintenant, jusqua]. Le champ severity.effect n'est pas fiable : les pannes
         d'ascenseur y sont en SIGNIFICANT_DELAYS. Une gare non desservie est un tronçon
         d'une seule gare (début = fin)."""
         debut = datetime.now(self.tz)
-        fin = debut + fenetre
+        fin = jusqua or debut + timedelta(minutes=90)
         out = {}
         for d in data.get("disruptions") or []:
             if d.get("status") == "past":
@@ -231,10 +261,11 @@ class PrimClient:
         return naive.replace(tzinfo=self.tz)
 
     # ------------------------------------------------------------------ itinéraire
-    def itineraire(self, depart: str, arrivee: str) -> Trajet | None:
+    def itineraire(self, depart: str, arrivee: str, quand: datetime | None = None) -> Trajet | None:
+        """Premier trajet partant de `depart` à partir de `quand` (maintenant par défaut)."""
         data = self.get("v2/navitia/journeys", {
             "from": depart, "to": arrivee,
-            "datetime": datetime.now(self.tz).strftime("%Y%m%dT%H%M%S"),
+            "datetime": (quand or datetime.now(self.tz)).strftime("%Y%m%dT%H%M%S"),
             "data_freshness": "realtime", "count": 1,
         })
         trajets = data.get("journeys") or []
@@ -246,6 +277,8 @@ class PrimClient:
             if section.get("type") != "public_transport":
                 continue
             trajet.extremites += [(section.get("from") or {}).get("name", ""), (section.get("to") or {}).get("name", "")]
+            trajet.montees.append(((section.get("from") or {}).get("name", ""),
+                                   self._date_navitia(section.get("departure_date_time"))))
             trajet.arrets += [(t.get("stop_point") or {}).get("name", "") for t in section.get("stop_date_times") or []]
         return trajet
 

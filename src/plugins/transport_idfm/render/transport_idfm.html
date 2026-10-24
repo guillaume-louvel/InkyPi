@@ -7,9 +7,27 @@
         <span class="date">{{ date }}{% if maj %} · MAJ {{ maj }}{% endif %}</span>
     </header>
 
+    {% if meteo %}
+    <section class="meteo">
+        <img class="meteo-icone" src="{{ meteo.icone }}" alt="">
+        <div class="meteo-maintenant">
+            <div class="meteo-temp">{{ meteo.temperature }}°</div>
+            <div class="meteo-ressenti">ressenti {{ meteo.ressenti }}°</div>
+        </div>
+        <div class="meteo-trajet">
+            <div class="meteo-titre">Vélo {{ meteo.fenetre }} · {{ meteo.etat }}</div>
+            <div>{{ meteo.temp_trajet }}</div>
+            <div>
+                {% if meteo.alertes %}<span class="meteo-alerte">⚠ {{ meteo.alertes | join(" · ") }}</span>
+                {% else %}{{ meteo.pluie }}{% endif %}{% if meteo.vent %} · {{ meteo.vent }}{% endif %}
+            </div>
+        </div>
+    </section>
+    {% endif %}
+
     <main class="colonnes">
         <section class="col bus">
-            <h2>Bus → {{ bus_destination }}</h2>
+            <h2>Bus → {{ bus_destination }}{% if a_l_arret %} <span class="pour">pour {{ a_l_arret }}</span>{% endif %}</h2>
             {% if not bus %}
                 <p class="vide">Aucun passage</p>
             {% endif %}
@@ -19,7 +37,7 @@
                 {% if p.annule %}
                     <span class="supprime">{{ p.heure }} supprimé</span>
                 {% else %}
-                    <span class="heure">{{ p.heure }}</span>
+                    <span class="heure">{% if p.prevu %}≈{% endif %}{{ p.heure }}</span>
                     {% if p.dans %}<span class="dans">{{ p.dans }}</span>{% endif %}
                 {% endif %}
             </div>
@@ -39,7 +57,7 @@
             {% endif %}
             {% for p in rer %}
             <div class="ligne-rer {% if p.annule %}annule{% endif %}">
-                <span class="heure-rer">{{ p.heure }}</span>
+                <span class="heure-rer">{% if p.prevu %}≈{% endif %}{{ p.heure }}</span>
                 <span class="dest">{% if p.annule %}supprimé{% else %}{{ p.destination }}{% endif %}</span>
             </div>
             {% endfor %}
@@ -52,7 +70,7 @@
             <div class="heure-arrivee">{{ arrivee or "indisponible" }}</div>
         </div>
         {% if depart and duree is not none %}
-        <div class="detail">départ {{ depart }} · {{ duree }} min</div>
+        <div class="detail">bus de {{ depart }} · {{ duree }} min</div>
         {% endif %}
     </footer>
 
@@ -60,7 +78,8 @@
         {% if erreurs %}
             <span class="erreur">⚠ {{ erreurs | join(" | ") }}</span>
         {% else %}
-            <span>{{ arret_bus }}</span><span>Source : Île-de-France Mobilités</span>
+            <span>{{ arret_bus }}{% if bus | selectattr("prevu") | list or rer | selectattr("prevu") | list %} · ≈ horaire prévu{% endif %}</span>
+            <span>Île-de-France Mobilités · Open-Meteo</span>
         {% endif %}
     </div>
 </div>

@@ -20,25 +20,50 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: calc(1.2 * var(--u)) 2.5dvw;
-  height: calc(11 * var(--u));
+  padding: calc(1 * var(--u)) 2.5dvw;
+  height: calc(9 * var(--u));
 }
-.titre { font-size: calc(5.5 * var(--u)); font-weight: 600; }
+.titre { font-size: calc(4.8 * var(--u)); font-weight: 600; }
 .date { font-size: calc(3.8 * var(--u)); }
+
+.meteo {
+  display: flex;
+  align-items: center;
+  gap: 2dvw;
+  padding: calc(1 * var(--u)) 2.5dvw;
+  border-bottom: 2px solid var(--noir);
+  height: calc(16.5 * var(--u));
+}
+.meteo-icone { height: calc(13 * var(--u)); width: auto; }
+.meteo-maintenant { text-align: center; min-width: calc(18 * var(--u)); }
+.meteo-temp { font-size: calc(8.5 * var(--u)); font-weight: 600; line-height: 1; }
+.meteo-ressenti { font-size: calc(3.2 * var(--u)); }
+.meteo-trajet {
+  flex: 1;
+  min-width: 0;
+  font-size: calc(3.4 * var(--u));
+  line-height: 1.3;
+  border-left: 2px solid var(--noir);
+  padding-left: 2dvw;
+}
+.meteo-trajet > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meteo-titre { font-weight: 600; font-size: calc(3.8 * var(--u)); }
+.meteo-alerte { color: var(--rouge); font-weight: 600; }
 
 .colonnes {
   flex: 1;
   display: flex;
   gap: 2.5dvw;
-  padding: calc(2 * var(--u)) 2.5dvw calc(1 * var(--u));
+  padding: calc(1.5 * var(--u)) 2.5dvw calc(0.5 * var(--u));
   min-height: 0;
 }
 .col { flex: 1; min-width: 0; overflow: hidden; }
 .col.bus { border-right: 2px solid var(--noir); padding-right: 2.5dvw; }
+.pour { font-size: calc(3.2 * var(--u)); font-weight: normal; }
 h2 {
   font-size: calc(4.2 * var(--u));
   font-weight: 600;
-  margin-bottom: calc(1.5 * var(--u));
+  margin-bottom: calc(1.2 * var(--u));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -53,7 +78,7 @@ h2 {
   padding: calc(0.3 * var(--u)) calc(1.2 * var(--u));
   color: var(--blanc);
 }
-.badge.bleu { background: var(--bleu); font-size: calc(4.8 * var(--u)); }
+.badge.bleu { background: var(--bleu); font-size: calc(4.4 * var(--u)); }
 .badge.rouge { background: var(--rouge); }
 .badge.petit { min-width: 0; font-size: calc(3.8 * var(--u)); padding: 0 calc(1.4 * var(--u)); }
 
@@ -61,9 +86,9 @@ h2 {
   display: flex;
   align-items: center;
   gap: 1.8dvw;
-  margin-bottom: calc(1.6 * var(--u));
+  margin-bottom: calc(1.2 * var(--u));
 }
-.heure { font-size: calc(7 * var(--u)); font-weight: 600; line-height: 1; }
+.heure { font-size: calc(6 * var(--u)); font-weight: 600; line-height: 1; }
 .dans { font-size: calc(3.8 * var(--u)); }
 .supprime { font-size: calc(4.2 * var(--u)); font-weight: 600; color: var(--rouge); }
 .vide { font-size: calc(4 * var(--u)); }
@@ -72,7 +97,7 @@ h2 {
   font-size: calc(4 * var(--u));
   font-weight: 600;
   padding: calc(0.8 * var(--u)) 1.2dvw;
-  margin-bottom: calc(1.2 * var(--u));
+  margin-bottom: calc(1 * var(--u));
 }
 .etat.rouge { background: var(--rouge); color: var(--blanc); }
 .etat.vert { background: var(--vert); }
@@ -82,7 +107,7 @@ h2 {
   line-height: 1.2;
   margin-bottom: calc(1.2 * var(--u));
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -96,7 +121,7 @@ h2 {
   margin-bottom: calc(0.6 * var(--u));
   white-space: nowrap;
 }
-.heure-rer { font-size: calc(5 * var(--u)); font-weight: 600; }
+.heure-rer { font-size: calc(4.6 * var(--u)); font-weight: 600; }
 .dest { font-size: calc(3.8 * var(--u)); overflow: hidden; text-overflow: ellipsis; }
 .ligne-rer.annule { color: var(--rouge); }
 
@@ -105,11 +130,11 @@ h2 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: calc(1.2 * var(--u)) 2.5dvw;
-  height: calc(17 * var(--u));
+  padding: calc(0.8 * var(--u)) 2.5dvw;
+  height: calc(13 * var(--u));
 }
 .arrivee .label { font-size: calc(3.8 * var(--u)); }
-.heure-arrivee { font-size: calc(7.5 * var(--u)); font-weight: 600; line-height: 1.05; }
+.heure-arrivee { font-size: calc(6.5 * var(--u)); font-weight: 600; line-height: 1.05; }
 .arrivee .detail { font-size: calc(3.8 * var(--u)); }
 
 .pied {
@@ -129,6 +154,6 @@ h2 {
   .colonnes { gap: calc(2 * var(--u)); }
   .colonnes { flex-direction: column; }
   .col.bus { border-right: none; border-bottom: 2px solid var(--noir); padding: 0 0 calc(1.5 * var(--u)); }
-  .bandeau, .arrivee, .pied { height: auto; }
+  .bandeau, .meteo, .arrivee, .pied { height: auto; }
   .pied { flex-direction: column; }
 }

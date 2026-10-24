@@ -6,7 +6,7 @@ Usage, from the InkyPi folder on the Pi:
 
 Reads PRIM_API_KEY from the .env file. Prints what the APIs return for the bus
 stop, the lines serving it, the RER A disruptions, and what the plugin would
-display from all that; never prints the key.
+display from all that, now and 75 minutes ahead; never prints the key.
 """
 import html
 import logging
@@ -133,21 +133,33 @@ def journey():
         print("journey disruption:", d.get("status"), "|", (d.get("severity") or {}).get("effect"), "|", text(d)[:80])
 
 
-def plugin_view():
-    sys.path.insert(0, os.path.join(ROOT, "src"))
-    logging.disable(logging.CRITICAL)  # the plugin logs full tracebacks; errors are listed below instead
-    from plugins.transport_idfm.idfm_api import PrimClient
-    from plugins.transport_idfm.transport_idfm import TransportIdfm
+def plugin_view(minutes_ahead=0):
+    """What the plugin would display for someone at the bus stop `minutes_ahead` from now."""
+    def view():
+        sys.path.insert(0, os.path.join(ROOT, "src"))
+        logging.disable(logging.CRITICAL)  # the plugin logs full tracebacks; errors are listed below instead
+        from datetime import datetime, timedelta
+        from plugins.transport_idfm.idfm_api import PrimClient
+        from plugins.transport_idfm.transport_idfm import TransportIdfm
 
-    client = PrimClient(API_KEY, ZoneInfo("Europe/Paris"))
-    state, names = TransportIdfm({"id": "transport_idfm"})._collecter(client, {"busStop": STOP_NAME})
-    print("Bus:", [f"{p.ligne} {p.heure:%H:%M} {p.destination}" for p in state.bus])
-    print("RER:", [f"{p.heure:%H:%M} {p.destination}" for p in state.rer])
-    print("Traffic banner:", (state.perturbations[0] if state.perturbations else "normal")
-          if state.trafic_connu else "unknown")
-    print("Small traffic info:", state.infos_trafic or None)
-    print("Arrival:", f"{state.arrivee:%H:%M}" if state.arrivee else None)
-    print("Errors:", state.erreurs or None)
+        tz = ZoneInfo("Europe/Paris")
+        at_stop = (datetime.now(tz) + timedelta(minutes=minutes_ahead)).strftime("%H:%M")
+        bike_to = (datetime.now(tz) + timedelta(minutes=minutes_ahead + 45)).strftime("%H:%M")
+        settings = {"busStop": STOP_NAME, "atStop": at_stop, "bikeFrom": at_stop, "bikeTo": bike_to}
+        state, names = TransportIdfm({"id": "transport_idfm"})._collecter(PrimClient(API_KEY, tz), settings)
+        print(f"At the stop at {at_stop} (≈ = timetable, not live)")
+        print("Bus:", [f"{p.ligne} {'≈' if p.prevu else ''}{p.heure:%H:%M} {p.destination}" for p in state.bus])
+        print("RER:", [f"{'≈' if p.prevu else ''}{p.heure:%H:%M} {p.destination}" for p in state.rer])
+        print("Traffic banner:", (state.perturbations[0] if state.perturbations else "normal")
+              if state.trafic_connu else "unknown")
+        print("Small traffic info:", state.infos_trafic or None)
+        print("Arrival:", f"{state.arrivee:%H:%M} (bus at {state.depart_trajet:%H:%M})" if state.arrivee else None)
+        if state.meteo:
+            w = state.meteo.vue()
+            print(f"Weather: {w['temperature']}° (feels {w['ressenti']}°) | bike {w['fenetre']}: {w['etat']} | "
+                  f"{w['temp_trajet']} | {w['pluie']} | {w['vent']} | alerts: {w['alertes'] or None}")
+        print("Errors:", state.erreurs or None)
+    return view
 
 
 if __name__ == "__main__":
@@ -166,4 +178,5 @@ if __name__ == "__main__":
         section("Lines at that stop", lines)
         section("Journey to Nanterre Préfecture (realtime)", journey)
     section("RER A disruptions (Navitia)", rer_disruptions)
-    section("What the plugin would show now", plugin_view)
+    section("What the plugin would show now", plugin_view(0))
+    section("What it would show 75 minutes ahead (like 7h30 for 8h45)", plugin_view(75))

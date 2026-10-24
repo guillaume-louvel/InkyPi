@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from plugins.transport_idfm import meteo
 from plugins.transport_idfm.idfm_api import Passage, Perturbation, PrimClient, classer, code_ligne, filtrer
 from plugins.transport_idfm.transport_idfm import TransportIdfm
 
@@ -118,75 +119,188 @@ class TestClassification:
         assert classer([p], [], ["Joinville-le-Pont", "Nanterre Préfecture"]) == (["Travaux Boissy"], [])
 
 
+MONDAY_0730 = datetime(2026, 10, 26, 7, 30, tzinfo=PARIS)
+
+
+def at(hhmm):
+    hours, minutes = map(int, hhmm.split(":"))
+    return MONDAY_0730.replace(hour=hours, minute=minutes)
+
+
+def departure(code, line_id, direction, hhmm, realtime=False):
+    return {"display_informations": {"code": code, "direction": direction},
+            "route": {"line": {"id": line_id}},
+            "stop_date_time": {"departure_date_time": navitia(at(hhmm)),
+                               "data_freshness": "realtime" if realtime else "base_schedule"}}
+
+
+# Open-Meteo answer for Monday morning: rain from 8h30, strong gusts at 8h
+OPEN_METEO = {
+    "current": {"temperature_2m": 6.2, "apparent_temperature": 3.1, "weather_code": 3, "is_day": 1},
+    "hourly": {
+        "time": [f"2026-10-26T{h:02d}:00" for h in range(7, 11)],
+        "temperature_2m": [5.8, 6.4, 7.5, 8.9],
+        "apparent_temperature": [2.9, 3.4, 4.6, 6.0],
+        "precipitation_probability": [10, 70, 80, 40],
+        "weather_code": [3, 61, 63, 3],
+        "wind_speed_10m": [15, 22, 25, 18],
+        "wind_gusts_10m": [30, 55, 48, 35],
+    },
+    "minutely_15": {
+        "time": [f"2026-10-26T{h:02d}:{m:02d}" for h in (8, 9) for m in (0, 15, 30, 45)],
+        "precipitation": [0.0, 0.0, 0.3, 0.5, 0.2, 0.1, 0.0, 0.0],
+    },
+}
+
+
 class FakeClient(PrimClient):
-    """PrimClient answering from the responses captured at Les Platanes / Joinville-le-Pont."""
+    """Answers like PRIM on Monday at 7h30: the live departures stop before 8h30, so the
+    8h30 buses and the train after them come from the journey planner's timetable."""
 
     def __init__(self):
         super().__init__("key", PARIS)
         self.calls = []
 
     def get(self, chemin, params=None):
-        self.calls.append(chemin)
-        now = datetime.now(PARIS)
+        self.calls.append((chemin, params))
         if chemin == "v2/navitia/places":
             ids = {"Les Platanes": ("stop_area:IDFM:70606", "Les Platanes (Joinville-le-Pont)"),
                    "Joinville-le-Pont": ("stop_area:IDFM:70640", "Joinville-le-Pont (Joinville-le-Pont)"),
                    "Nanterre Préfecture": ("stop_area:IDFM:71379", "Nanterre Préfecture (Nanterre)")}
             stop_id, name = ids[params["q"]]
             return {"places": [{"id": stop_id, "name": name, "embedded_type": "stop_area"}]}
+        if chemin == "v2/navitia/stop_areas/stop_area:IDFM:70606":
+            return {"stop_areas": [{"coord": {"lat": "48.8205", "lon": "2.4741"}}]}
         if chemin == "v2/navitia/stop_areas/stop_area:IDFM:70606/lines":
             return {"lines": [{"code": "106", "id": "line:IDFM:C01135"}, {"code": "108", "id": "line:IDFM:C01137"},
                               {"code": "110", "id": "line:IDFM:C01139"}, {"code": "N33", "id": "line:IDFM:C01399"}]}
         if chemin == "stop-monitoring" and params["MonitoringRef"] == "STIF:StopArea:SP:70606:":
-            visits = [siri_visit("STIF:Line::C01135:", "Villiers Gare", now + timedelta(minutes=2)),
-                      siri_visit("STIF:Line::C01137:", "Joinville RER", now + timedelta(minutes=4)),
-                      siri_visit("STIF:Line::C01135:", "Joinville RER", now + timedelta(minutes=5)),
-                      siri_visit("STIF:Line::C01139:", "Joinville RER", now + timedelta(minutes=16))]
+            visits = [siri_visit("STIF:Line::C01137:", "Joinville RER", at("07:40")),
+                      siri_visit("STIF:Line::C01135:", "Joinville RER", at("08:20")),
+                      siri_visit("STIF:Line::C01139:", "Joinville RER", at("08:28")),
+                      siri_visit("STIF:Line::C01135:", "Villiers Gare", at("08:30"))]
             return {"Siri": {"ServiceDelivery": {"StopMonitoringDelivery": [{"MonitoredStopVisit": visits}]}}}
         if chemin == "stop-monitoring":
-            visits = [siri_visit("STIF:Line::C01742:", "Boissy-Saint-Léger", now + timedelta(minutes=3)),
-                      siri_visit("STIF:Line::C01742:", "Saint-Germain-en-Laye", now + timedelta(minutes=6))]
+            visits = [siri_visit("STIF:Line::C01742:", "Saint-Germain-en-Laye", at("07:35")),
+                      siri_visit("STIF:Line::C01742:", "Boissy-Saint-Léger", at("07:38"))]
             return {"Siri": {"ServiceDelivery": {"StopMonitoringDelivery": [{"MonitoredStopVisit": visits}]}}}
+        if chemin == "v2/navitia/stop_areas/stop_area:IDFM:70606/departures":
+            assert params["from_datetime"] == "20261026T082700"
+            return {"departures": [
+                departure("110", "line:IDFM:C01139", "Joinville-le-Pont RER", "08:29"),  # = live 8h28
+                departure("106", "line:IDFM:C01135", "Villiers Gare", "08:33"),
+                departure("106", "line:IDFM:C01135", "Joinville-le-Pont RER", "08:36"),
+                departure("108", "line:IDFM:C01137", "Joinville-le-Pont RER", "08:44"),
+            ]}
+        if chemin == "v2/navitia/stop_areas/stop_area:IDFM:70640/departures":
+            assert params["from_datetime"] == "20261026T084500"  # the itinerary's train (8h47) - 2 min
+            return {"departures": [
+                departure("A", "line:IDFM:C01742", "Saint-Germain-en-Laye", "08:47", realtime=True),
+                departure("A", "line:IDFM:C01742", "Boissy-Saint-Léger", "08:49"),
+                departure("A", "line:IDFM:C01742", "Cergy-le-Haut", "08:52"),
+                departure("A", "line:IDFM:C01742", "Poissy", "08:57"),
+            ]}
         if chemin == "v2/navitia/lines/line:IDFM:C01742/line_reports":
-            today = now.replace(tzinfo=None)
             cdg = {"pt_object": {"embedded_type": "line"},
                    "impacted_section": {"from": {"name": "Charles de Gaulle - Étoile (Paris)"},
                                         "to": {"name": "Charles de Gaulle - Étoile (Paris)"}}}
+            nation = {"pt_object": {"embedded_type": "line"},
+                      "impacted_section": {"from": {"name": "Vincennes (Vincennes)"}, "to": {"name": "Nation (Paris)"}}}
+            naive = MONDAY_0730.replace(tzinfo=None)
             return {"disruptions": [
-                disruption("Panne d'un ascenseur", STATION, today - timedelta(days=9), today + timedelta(days=300)),
-                disruption("CDG Étoile non desservie", cdg, today - timedelta(hours=8), today + timedelta(hours=12)),
+                disruption("Panne d'un ascenseur", STATION, naive - timedelta(days=9), naive + timedelta(days=300)),
+                disruption("CDG Étoile non desservie", cdg, naive - timedelta(hours=8), naive + timedelta(hours=12)),
+                # Starts after 9h: within 90 min of being at the stop (8h30), not of now (7h30)
+                disruption("Incident Vincennes - Nation", nation, naive + timedelta(minutes=95), naive + timedelta(hours=4)),
             ]}
         if chemin == "v2/navitia/journeys":
-            def section(start, end, stops):
+            assert params["datetime"] == "20261026T083000"  # leaving when at the stop, not now
+
+            def section(start, end, stops, leaves):
                 return {"type": "public_transport", "from": {"name": start}, "to": {"name": end},
+                        "departure_date_time": navitia(at(leaves)),
                         "stop_date_times": [{"stop_point": {"name": n}} for n in stops]}
             return {"journeys": [{
-                "departure_date_time": navitia(now + timedelta(minutes=4)),
-                "arrival_date_time": navitia(now + timedelta(minutes=50)),
-                "sections": [section(ENDS[0], ENDS[1], ROUTE[:2]), {"type": "transfer"},
-                             section(ENDS[2], ENDS[3], ROUTE[2:])],
+                "departure_date_time": navitia(at("08:36")),
+                "arrival_date_time": navitia(at("09:20")),
+                "sections": [section(ENDS[0], ENDS[1], ROUTE[:2], "08:36"), {"type": "transfer"},
+                             section(ENDS[2], ENDS[3], ROUTE[2:], "08:47")],
             }]}
         raise AssertionError(f"unexpected call: {chemin} {params}")
 
 
+@pytest.fixture
+def monday_0730(monkeypatch):
+    import plugins.transport_idfm.idfm_api as idfm_api
+    import plugins.transport_idfm.transport_idfm as transport_idfm
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return MONDAY_0730.astimezone(tz) if tz else MONDAY_0730.replace(tzinfo=None)
+
+    for module in (idfm_api, transport_idfm):
+        monkeypatch.setattr(module, "datetime", Frozen)
+    monkeypatch.setattr(meteo, "prevision",
+                        lambda lat, lon, tz, debut, fin: meteo.analyser(OPEN_METEO, tz, debut, fin))
+
+
 class TestCollection:
 
-    def test_bus_lines_are_filtered_and_named_from_line_codes(self):
+    def test_monday_morning_for_being_at_the_stop_at_0830(self, monday_0730):
         plugin = TransportIdfm({"id": "transport_idfm"})
-        settings = {"busStop": "Les Platanes"}
+        settings = {"busStop": "Les Platanes"}  # defaults: at the stop at 08:30, bike 08:15-09:00
         client = FakeClient()
 
         etat, noms = plugin._collecter(client, settings)
 
         assert etat.erreurs == []
-        assert [(p.ligne, p.destination) for p in etat.bus] == [("108", "Joinville RER"), ("106", "Joinville RER"),
-                                                                ("110", "Joinville RER")]
-        assert [p.destination for p in etat.rer] == ["Saint-Germain-en-Laye"]
-        assert etat.trafic_connu and etat.perturbations == []
+        assert etat.a_l_arret == at("08:30")
+        # Live 110 at 8h28, then timetable buses (the 8h29 110 is the same bus as the live 8h28)
+        assert [(p.ligne, f"{p.heure:%H:%M}", p.prevu) for p in etat.bus] == [
+            ("110", "08:28", False), ("106", "08:36", True), ("108", "08:44", True)]
+        # Trains from the itinerary's one (8h47), westbound only
+        assert [(f"{p.heure:%H:%M}", p.destination) for p in etat.rer] == [
+            ("08:47", "Saint-Germain-en-Laye"), ("08:52", "Cergy-le-Haut"), ("08:57", "Poissy")]
+        assert etat.depart_trajet == at("08:36") and etat.arrivee == at("09:20")
+        assert etat.perturbations == ["Incident Vincennes - Nation"]
         assert etat.infos_trafic == ["CDG Étoile non desservie"]
-        assert etat.arrivee is not None
+        assert etat.meteo.alertes == ["Pluie dès 8h30", "Rafales à 55 km/h"]
         assert noms["bus"] == "Les Platanes (Joinville-le-Pont)"
 
-        # The line table is cached in the settings: no second lookup on the next refresh
+        # Line table and coordinates are cached in the settings for the next refreshes
         plugin._collecter(client, settings)
-        assert client.calls.count("v2/navitia/stop_areas/stop_area:IDFM:70606/lines") == 1
+        chemins = [chemin for chemin, _ in client.calls]
+        assert chemins.count("v2/navitia/stop_areas/stop_area:IDFM:70606/lines") == 1
+        assert chemins.count("v2/navitia/stop_areas/stop_area:IDFM:70606") == 1
+
+    def test_weather_can_be_hidden(self, monday_0730):
+        etat, _ = TransportIdfm({"id": "transport_idfm"})._collecter(
+            FakeClient(), {"busStop": "Les Platanes", "hideWeather": "true"})
+        assert etat.meteo is None
+
+
+class TestWeather:
+
+    def test_bike_window(self):
+        m = meteo.analyser(OPEN_METEO, PARIS, at("08:15"), at("09:00"))
+        vue = m.vue()
+        assert (m.temperature, m.ressenti) == (6.2, 3.1)
+        assert m.pluie_debut == at("08:30") and round(m.pluie_mm, 1) == 0.8
+        assert (m.vent, m.rafales, m.pluie_proba) == (22, 55, 70)
+        assert vue["fenetre"] == "8h15–9h" and vue["etat"] == "Pluie faible"
+        assert vue["pluie"] == "Pluie dès 8h30 (0,8 mm)"
+        assert vue["icone"].endswith("plugins/weather/icons/04d.png")
+
+    def test_dry_mild_morning_has_no_alerts(self):
+        data = {"current": {"temperature_2m": 12, "apparent_temperature": 11, "weather_code": 1, "is_day": 1},
+                "hourly": {"time": ["2026-10-26T08:00"], "temperature_2m": [12], "apparent_temperature": [11],
+                           "precipitation_probability": [5], "weather_code": [1], "wind_speed_10m": [10],
+                           "wind_gusts_10m": [20]},
+                "minutely_15": {"time": ["2026-10-26T08:15"], "precipitation": [0.0]}}
+        m = meteo.analyser(data, PARIS, at("08:15"), at("09:00"))
+        assert m.alertes == [] and m.vue()["pluie"] == "Pas de pluie prévue"
+
+    def test_frost(self):
+        data = {"current": {"temperature_2m": -1, "apparent_temperature": -5, "weather_code": 0, "is_day": 1}}
+        assert "Risque de verglas" in meteo.analyser(data, PARIS, at("08:15"), at("09:00")).alertes

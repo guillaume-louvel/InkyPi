@@ -21,6 +21,10 @@
         <span>Nombre de passages</span>
         <input type="number" id="busCount" name="busCount" class="form-input" min="1" max="6" value="{{ defaults.busCount }}">
     </div>
+    <div class="form-group">
+        <span>Je suis à l'arrêt vers (bus, train et arrivée calculés pour cette heure ; ensuite, pour maintenant)</span>
+        <input type="time" id="atStop" name="atStop" class="form-input" value="{{ defaults.atStop }}">
+    </div>
 </div>
 
 <div class="form-group">
@@ -50,6 +54,19 @@
 </div>
 
 <div class="form-group">
+    <label class="form-label">Météo (Open-Meteo, sans clé)</label>
+    <div class="form-group">
+        <input type="checkbox" id="hideWeather" name="hideWeather" onclick="this.value=this.checked ? 'true' : 'false';">
+        <span>Masquer la météo (sinon : météo autour de l'arrêt de bus)</span>
+    </div>
+    <div class="form-group">
+        <span>Trajet à vélo de … à …</span>
+        <input type="time" id="bikeFrom" name="bikeFrom" class="form-input" value="{{ defaults.bikeFrom }}">
+        <input type="time" id="bikeTo" name="bikeTo" class="form-input" value="{{ defaults.bikeTo }}">
+    </div>
+</div>
+
+<div class="form-group">
     <label class="form-label">Affichage</label>
     <div class="form-group">
         <input type="checkbox" id="showCountdown" name="showCountdown" onclick="this.value=this.checked ? 'true' : 'false';">
@@ -70,13 +87,13 @@
         if (loadPluginSettings) {
             const champs = ['title', 'busStop', 'busLines', 'busDestination', 'busCount',
                             'rerStop', 'rerLineRef', 'rerLabel', 'rerExclude', 'rerCount',
-                            'destinationStop'];
+                            'destinationStop', 'atStop', 'bikeFrom', 'bikeTo'];
             champs.forEach(id => {
                 if (pluginSettings[id] !== undefined) {
                     document.getElementById(id).value = pluginSettings[id];
                 }
             });
-            ['showCountdown', 'showRefreshTime', 'demoMode'].forEach(id => {
+            ['showCountdown', 'showRefreshTime', 'demoMode', 'hideWeather'].forEach(id => {
                 const el = document.getElementById(id);
                 el.checked = pluginSettings[id] === 'true';
                 el.value = el.checked ? 'true' : 'false';
