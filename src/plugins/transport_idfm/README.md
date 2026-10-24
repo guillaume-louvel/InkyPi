@@ -48,3 +48,25 @@ rafraîchissement (~30 s). Laisse le compte à rebours désactivé.
 
 Pour vérifier la clé, les arrêts et la météo sur le Pi :
 `sudo /usr/local/inkypi/venv_inkypi/bin/python scripts/idfm_check.py "Les Platanes"`
+
+## Notes techniques
+
+Constats faits sur les vraies API PRIM (octobre 2026) :
+
+- **Identifiants d'arrêt** : `stop_area:IDFM:<n>` (Navitia) devient `STIF:StopArea:SP:<n>:`
+  pour `stop-monitoring` (vérifié pour Joinville-le-Pont et Les Platanes).
+- **Lignes** : les passages temps réel n'ont pas de `PublishedLineName`, seulement
+  `LineRef` (106 = `C01135`, 108 = `C01137`, 110 = `C01139`). Le plugin récupère la
+  table nom → code via `v2/navitia/stop_areas/<id>/lines` et la garde en cache.
+- **Horizon du temps réel** : `stop-monitoring` couvre environ une heure. Au-delà, les
+  départs viennent de `v2/navitia/stop_areas/<id>/departures` (marqués « ≈ » s'ils sont
+  théoriques), sans doublon avec le temps réel.
+- **Info trafic** : `general-message` renvoie surtout des travaux à venir ; on utilise
+  `v2/navitia/lines/<ligne>/line_reports`. Les pannes d'ascenseur y sont rattachées à
+  une gare (et classées à tort `SIGNIFICANT_DELAYS`), une gare non desservie est un
+  tronçon d'une seule gare, et les périodes d'application sont parfois grossières. D'où
+  le tri par rapport au trajet (`classer()`), qui s'appuie sur les gares de l'itinéraire.
+- **Itinéraire** : le statut global de `journeys` n'est pas exploitable (une panne
+  d'ascenseur suffit à le dégrader) ; seules les heures et la liste des gares servent.
+
+Tests : `tests/test_transport_idfm.py`, construits à partir de ces réponses réelles.
