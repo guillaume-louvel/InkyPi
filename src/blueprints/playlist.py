@@ -81,6 +81,25 @@ def playlists():
         plugins={p["id"]: p for p in plugins_list}
     )
 
+def parse_schedule(data):
+    """Days of the week (0 = Monday, None = every day) and refresh interval in seconds
+    (None = device default) from a playlist form. Raises ValueError when invalid."""
+    days = data.get("days")
+    if days is not None:
+        days = sorted({int(d) for d in days})
+        if not days or any(d < 0 or d > 6 for d in days):
+            raise ValueError("Select at least one day")
+        if len(days) == 7:
+            days = None
+    cycle_minutes = data.get("cycle_minutes")
+    cycle_seconds = None
+    if cycle_minutes not in (None, ""):
+        cycle_seconds = int(float(cycle_minutes) * 60)
+        if not 60 <= cycle_seconds <= 86400:
+            raise ValueError("Refresh interval must be between 1 minute and 24 hours")
+    return days, cycle_seconds
+
+
 @playlist_bp.route('/create_playlist', methods=['POST'])
 def create_playlist():
     device_config = current_app.config['DEVICE_CONFIG']
@@ -95,18 +114,23 @@ def create_playlist():
         return jsonify({"error": "Playlist name is required"}), 400
     if not start_time or not end_time:
         return jsonify({"error": "Start time and End time are required"}), 400
+    try:
+        days, cycle_seconds = parse_schedule(data)
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
 
     try:
         playlist = playlist_manager.get_playlist(playlist_name)
         if playlist:
             return jsonify({"error": f"Playlist with name '{playlist_name}' already exists"}), 400
 
-        result = playlist_manager.add_playlist(playlist_name, start_time, end_time)
+        result = playlist_manager.add_playlist(playlist_name, start_time, end_time, days, cycle_seconds)
         if not result:
             return jsonify({"error": "Failed to create playlist"}), 500
 
         # save changes to device config file
         device_config.write_config()
+        current_app.config['REFRESH_TASK'].signal_config_change()
 
     except Exception as e:
         logger.exception("EXCEPTION CAUGHT: " + str(e))
@@ -127,15 +151,20 @@ def update_playlist(playlist_name):
     end_time = data.get("end_time")
     if not new_name or not start_time or not end_time:
         return jsonify({"success": False, "error": "Missing required fields"}), 400
+    try:
+        days, cycle_seconds = parse_schedule(data)
+    except (TypeError, ValueError) as e:
+        return jsonify({"error": str(e)}), 400
 
     playlist = playlist_manager.get_playlist(playlist_name)
     if not playlist:
         return jsonify({"error": f"Playlist '{playlist_name}' does not exist"}), 400
 
-    result = playlist_manager.update_playlist(playlist_name, new_name, start_time, end_time)
+    result = playlist_manager.update_playlist(playlist_name, new_name, start_time, end_time, days, cycle_seconds)
     if not result:
-        return jsonify({"error": "Failed to delete playlist"}), 500
+        return jsonify({"error": "Failed to update playlist"}), 500
     device_config.write_config()
+    current_app.config['REFRESH_TASK'].signal_config_change()
 
     return jsonify({"success": True, "message": f"Updated playlist '{playlist_name}'!"})
 

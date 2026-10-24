@@ -82,9 +82,7 @@ class RefreshTask:
             manual = False
             try:
                 with self.condition:
-                    sleep_time = self.device_config.get_config("plugin_cycle_interval_seconds", default=60*60)
-                    if self.retry_after_failure:
-                        sleep_time = min(sleep_time, FAILED_REFRESH_RETRY_SECONDS)
+                    sleep_time = self._sleep_seconds()
 
                     # Wait for sleep_time or until notified
                     self.condition.wait(timeout=sleep_time)
@@ -183,6 +181,29 @@ class RefreshTask:
             if immediate:
                 self.condition.notify_all()
 
+    def _cycle_seconds(self, playlist):
+        """How often the display moves on: the playlist's own interval, else the device-wide one."""
+        device_interval = self.device_config.get_config("plugin_cycle_interval_seconds", default=60*60)
+        return (playlist.cycle_seconds if playlist and playlist.cycle_seconds else None) or device_interval
+
+    def _sleep_seconds(self):
+        """Seconds until the next refresh check: the active playlist's interval, cut short at
+        the next playlist start or end so the display switches on time."""
+        try:
+            now = self._get_current_datetime()
+            playlist_manager = self.device_config.get_playlist_manager()
+            sleep_time = self._cycle_seconds(playlist_manager.determine_active_playlist(now))
+            until_change = playlist_manager.seconds_until_next_change(now)
+            if until_change is not None:
+                sleep_time = min(sleep_time, until_change + 1)
+        except Exception:
+            # Never let a bad schedule turn the loop into a busy loop
+            logger.exception("Failed to compute the refresh schedule")
+            sleep_time = self.device_config.get_config("plugin_cycle_interval_seconds", default=60*60)
+        if self.retry_after_failure:
+            sleep_time = min(sleep_time, FAILED_REFRESH_RETRY_SECONDS)
+        return max(sleep_time, 1)
+
     def _in_wifi_setup(self):
         return self.network_monitor is not None and self.network_monitor.in_setup_mode()
 
@@ -211,8 +232,12 @@ class RefreshTask:
             return None, None
 
         latest_refresh_dt = latest_refresh_info.get_refresh_datetime()
-        plugin_cycle_interval = self.device_config.get_config("plugin_cycle_interval_seconds", default=3600)
+        plugin_cycle_interval = self._cycle_seconds(playlist)
         should_refresh = PlaylistManager.should_refresh(latest_refresh_dt, plugin_cycle_interval, current_dt)
+        # A different playlist just became active (e.g. a morning playlist starting): switch now
+        if latest_refresh_info.refresh_type == "Playlist" and latest_refresh_info.playlist != playlist.name:
+            logger.info(f"Active playlist changed to '{playlist.name}'")
+            should_refresh = True
 
         if not should_refresh and not force:
             latest_refresh_str = latest_refresh_dt.strftime('%Y-%m-%d %H:%M:%S') if latest_refresh_dt else "None"

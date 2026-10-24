@@ -905,6 +905,25 @@ html[data-theme="dark"] .settings-button.dark-mode-toggle::before {
     transition: color 0.3s ease;
 }
 
+.playlist-schedule {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.day-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+}
+
+.day-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: normal;
+}
+
 .action-icon {
     width: 20px;
     height: 20px;

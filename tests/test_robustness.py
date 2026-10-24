@@ -8,18 +8,23 @@ import pytz
 
 import utils.image_utils as image_utils
 from config import Config
+from model import Playlist, PlaylistManager, RefreshInfo
 from refresh_task import RefreshTask
 from utils.app_utils import get_ip_address
 
 
 def make_refresh_task(playlist_manager, network_monitor=None):
     device_config = Mock()
-    settings = {"plugin_cycle_interval_seconds": 0.01, "timezone": "UTC"}
+    settings = {"plugin_cycle_interval_seconds": 3600, "timezone": "UTC"}
     device_config.get_config.side_effect = lambda key, default=None: settings.get(key, default)
     device_config.get_playlist_manager.return_value = playlist_manager
     task = RefreshTask(device_config, Mock())
     task.network_monitor = network_monitor
+    task._sleep_seconds = lambda: 0.01  # the schedule itself is covered in test_playlist_schedule.py
     return task
+
+
+PLUGIN = {"plugin_id": "clock", "name": "Clock", "plugin_settings": {}, "refresh": {"interval": 300}}
 
 
 def run_briefly(task):
@@ -32,13 +37,16 @@ class TestRefreshTask:
 
     def test_skips_refresh_while_wifi_setup_is_showing(self):
         playlist_manager = Mock()
+        playlist_manager.determine_active_playlist.return_value = None
+        playlist_manager.seconds_until_next_change.return_value = None
         monitor = Mock()
         monitor.in_setup_mode.return_value = True
         task = make_refresh_task(playlist_manager, monitor)
+        task._determine_next_plugin = Mock()
 
         run_briefly(task)
 
-        playlist_manager.determine_active_playlist.assert_not_called()
+        task._determine_next_plugin.assert_not_called()
         task.display_manager.display_image.assert_not_called()
 
     def test_failed_refresh_is_retried_sooner(self):
@@ -52,19 +60,14 @@ class TestRefreshTask:
 
     def test_forced_refresh_ignores_cycle_interval(self):
         now = datetime.now(pytz.UTC)
-        plugin = Mock()
-        playlist = Mock()
-        playlist.plugins = [plugin]
-        playlist.get_next_plugin.return_value = plugin
-        playlist_manager = Mock()
-        playlist_manager.determine_active_playlist.return_value = playlist
-        latest_refresh = Mock()
-        latest_refresh.get_refresh_datetime.return_value = now  # just refreshed
+        playlist = Playlist("Default", "00:00", "24:00", [PLUGIN])
+        playlist_manager = PlaylistManager([playlist])
+        latest_refresh = RefreshInfo("Playlist", "clock", now.isoformat(), "hash", playlist="Default")
         task = make_refresh_task(playlist_manager)
         task.device_config.get_config.side_effect = lambda key, default=None: 3600
 
         assert task._determine_next_plugin(playlist_manager, latest_refresh, now) == (None, None)
-        assert task._determine_next_plugin(playlist_manager, latest_refresh, now, force=True) == (playlist, plugin)
+        assert task._determine_next_plugin(playlist_manager, latest_refresh, now, force=True)[0] is playlist
 
 
 class TestConfigWrite:

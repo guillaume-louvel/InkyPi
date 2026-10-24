@@ -189,6 +189,7 @@
             document.getElementById("editingPlaylistName").value = ""; // Empty value means it's new
             document.getElementById("start_time").value = "00:00";
             document.getElementById("end_time").value = "24:00";
+            setSchedule(null, "");
 
             document.getElementById("saveButton").setAttribute("onclick", "createPlaylist()");
             document.getElementById("deleteButton").classList.add("hidden"); // Hide delete button
@@ -197,17 +198,33 @@
         }
 
         // Open modal for **editing** an existing playlist
-        function openEditModal(playlistName, startTime, endTime) {
+        function openEditModal(button) {
+            const playlist = button.dataset;
             document.getElementById("modalTitle").textContent = "Update Playlist";
-            document.getElementById("playlist_name").value = playlistName;
-            document.getElementById("editingPlaylistName").value = playlistName;
-            document.getElementById("start_time").value = startTime;
-            document.getElementById("end_time").value = endTime;
+            document.getElementById("playlist_name").value = playlist.name;
+            document.getElementById("editingPlaylistName").value = playlist.name;
+            document.getElementById("start_time").value = playlist.start;
+            document.getElementById("end_time").value = playlist.end;
+            setSchedule(JSON.parse(playlist.days), playlist.cycle ? Number(playlist.cycle) / 60 : "");
 
             document.getElementById("saveButton").setAttribute("onclick", "updatePlaylist()");
             document.getElementById("deleteButton").classList.remove("hidden"); // Show delete button
 
             document.getElementById("playlistModal").style.display = "block";
+        }
+
+        // Days of the week (null = every day) and refresh interval (minutes, "" = device default)
+        function setSchedule(days, cycleMinutes) {
+            document.querySelectorAll("#days input").forEach(box => {
+                box.checked = days === null || days.includes(Number(box.value));
+            });
+            document.getElementById("cycle_minutes").value = cycleMinutes;
+        }
+
+        function getSchedule() {
+            const days = [...document.querySelectorAll("#days input:checked")].map(box => Number(box.value));
+            const cycle = document.getElementById("cycle_minutes").value;
+            return { days: days, cycle_minutes: cycle === "" ? null : Number(cycle) };
         }
 
         function openModal() {
@@ -231,7 +248,7 @@
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ playlist_name: playlistName, start_time: startTime, end_time: endTime })
+                    body: JSON.stringify({ playlist_name: playlistName, start_time: startTime, end_time: endTime, ...getSchedule() })
                 });
 
                 const result = await response.json();
@@ -260,7 +277,7 @@
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ new_name: newName, start_time: startTime, end_time: endTime })
+                    body: JSON.stringify({ new_name: newName, start_time: startTime, end_time: endTime, ...getSchedule() })
                 });
 
                 const result = await response.json();
@@ -402,8 +419,17 @@
             {% for playlist in playlist_config.playlists %}
             <div class="playlist-item {% if playlist.name == playlist_config.active_playlist %}active{% endif %}">
                     <div class="playlist-header">
-                        <span class="playlist-title">{{ playlist.name }}</span>
-                        <button class="edit-button" onclick="openEditModal('{{ playlist.name }}', '{{ playlist.start_time }}','{{ playlist.end_time }}')"><img src="{{ url_for('static', filename='icons/settings.png') }}" alt="edit playlist" class="action-icon"></button>
+                        <div>
+                            <span class="playlist-title">{{ playlist.name }}</span>
+                            <span class="playlist-schedule">
+                                {{ playlist.start_time }}–{{ playlist.end_time }}
+                                {% if playlist.days %} · {% for d in playlist.days %}{{ ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][d] }}{% if not loop.last %} {% endif %}{% endfor %}{% endif %}
+                                {% if playlist.cycle_seconds %} · every {{ (playlist.cycle_seconds / 60) | round(1) | replace(".0", "") }} min{% endif %}
+                            </span>
+                        </div>
+                        <button class="edit-button" onclick="openEditModal(this)"
+                                data-name="{{ playlist.name }}" data-start="{{ playlist.start_time }}" data-end="{{ playlist.end_time }}"
+                                data-days='{{ (playlist.days or none) | tojson }}' data-cycle="{{ playlist.cycle_seconds or '' }}"><img src="{{ url_for('static', filename='icons/settings.png') }}" alt="edit playlist" class="action-icon"></button>
                     </div>
                     <!-- Plugin List -->
                     <div class="plugin-list">
@@ -485,6 +511,20 @@
                     <select id="start_time" name="start_time" class="form-input"></select>
                     <span> - </span>
                     <select id="end_time" name="end_time" class="form-input"></select>
+                </div>
+                <div class="form-group">
+                    <span class="form-label">Days</span>
+                    <div class="day-picker" id="days">
+                        {% for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] %}
+                        <label class="day-option"><input type="checkbox" value="{{ loop.index0 }}" checked> {{ day }}</label>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="cycle_minutes" class="form-label">Refresh every</label>
+                    <input type="number" id="cycle_minutes" name="cycle_minutes" min="1" max="1440" step="1"
+                           placeholder="device default" class="form-input">
+                    <span>minutes</span>
                 </div>
             </form>
             <div class="buttons-container">

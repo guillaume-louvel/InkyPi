@@ -90,11 +90,11 @@ class PlaylistManager:
         return None
 
     def determine_active_playlist(self, current_datetime):
-        """Determine the active playlist based on the current time."""
+        """Determine the active playlist based on the current time and day of the week."""
         current_time = current_datetime.strftime("%H:%M")  # Get current time in "HH:MM" format
 
         # get active playlists that have plugins
-        active_playlists = [p for p in self.playlists if p.is_active(current_time)]
+        active_playlists = [p for p in self.playlists if p.is_active(current_time, current_datetime.weekday())]
         if not active_playlists:
             return None
 
@@ -103,6 +103,19 @@ class PlaylistManager:
         playlist = active_playlists[0]
 
         return playlist
+
+    def seconds_until_next_change(self, current_datetime):
+        """Seconds until the next playlist start or end time, so the display switches on time."""
+        candidates = []
+        for playlist in self.playlists:
+            for hhmm in (playlist.start_time, playlist.end_time):
+                hours, minutes = map(int, hhmm.split(":"))
+                day = current_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+                for offset in (0, 1):
+                    boundary = day + timedelta(days=offset, hours=hours, minutes=minutes)
+                    if boundary > current_datetime:
+                        candidates.append((boundary - current_datetime).total_seconds())
+        return min(candidates) if candidates else None
 
     def get_playlist(self, playlist_name):
         """Returns the playlist with the specified name."""
@@ -119,22 +132,24 @@ class PlaylistManager:
             logger.warning(f"Playlist '{playlist_name}' not found.")
         return False
 
-    def add_playlist(self, name, start_time=None, end_time=None):
+    def add_playlist(self, name, start_time=None, end_time=None, days=None, cycle_seconds=None):
         """Creates and adds a new playlist with the given start and end times."""
         if not start_time:
             start_time = PlaylistManager.DEFAULT_PLAYLIST_START
         if not end_time:
             end_time = PlaylistManager.DEFAULT_PLAYLIST_END
-        self.playlists.append(Playlist(name, start_time, end_time))
+        self.playlists.append(Playlist(name, start_time, end_time, days=days, cycle_seconds=cycle_seconds))
         return True
 
-    def update_playlist(self, old_name, new_name, start_time, end_time):
-        """Updates an existing playlist's name, start time, and end time."""
+    def update_playlist(self, old_name, new_name, start_time, end_time, days=None, cycle_seconds=None):
+        """Updates an existing playlist's name, start time, end time, days and refresh interval."""
         playlist = self.get_playlist(old_name)
         if playlist:
             playlist.name = new_name
             playlist.start_time = start_time
             playlist.end_time = end_time
+            playlist.days = days
+            playlist.cycle_seconds = cycle_seconds
             return True
         logger.warning(f"Playlist '{old_name}' not found.")
         return False
@@ -173,17 +188,25 @@ class Playlist:
         end_time (str): Playlist end time in 'HH:MM'.
         plugins (list): A list of PluginInstance objects within the playlist.
         current_plugin_index (int): Index of the currently active plugin in the playlist.
+        days (list): Days of the week the playlist runs, 0 = Monday. None means every day.
+        cycle_seconds (int): How often the display moves on while this playlist is active.
+            None means the device-wide plugin cycle interval.
     """
 
-    def __init__(self, name, start_time, end_time, plugins=None, current_plugin_index=None):
+    def __init__(self, name, start_time, end_time, plugins=None, current_plugin_index=None,
+                 days=None, cycle_seconds=None):
         self.name = name
         self.start_time = start_time
         self.end_time = end_time
         self.plugins = [PluginInstance.from_dict(p) for p in (plugins or [])]
         self.current_plugin_index = current_plugin_index
+        self.days = sorted(days) if days else None
+        self.cycle_seconds = cycle_seconds or None
 
-    def is_active(self, current_time):
-        """Check if the playlist is active at the given time."""
+    def is_active(self, current_time, weekday=None):
+        """Check if the playlist is active at the given time ("HH:MM") and weekday (0 = Monday)."""
+        if self.days is not None and weekday is not None and weekday not in self.days:
+            return False
         if self.start_time <= self.end_time:
             # Non-wrapping window (EG: 09:00-15:00)
             return self.start_time <= current_time < self.end_time
@@ -252,13 +275,18 @@ class Playlist:
         return int((end - start).total_seconds() // 60)
 
     def to_dict(self):
-        return {
+        playlist_dict = {
             "name": self.name,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "plugins": [p.to_dict() for p in self.plugins],
             "current_plugin_index": self.current_plugin_index
         }
+        if self.days is not None:
+            playlist_dict["days"] = self.days
+        if self.cycle_seconds:
+            playlist_dict["cycle_seconds"] = self.cycle_seconds
+        return playlist_dict
 
     @classmethod
     def from_dict(cls, data):
@@ -267,7 +295,9 @@ class Playlist:
             start_time=data["start_time"],
             end_time=data["end_time"],
             plugins=data["plugins"],
-            current_plugin_index=data.get("current_plugin_index", None)
+            current_plugin_index=data.get("current_plugin_index", None),
+            days=data.get("days"),
+            cycle_seconds=data.get("cycle_seconds")
         )
 
 class PluginInstance:
