@@ -188,6 +188,13 @@
                     </div>
 
                     <div class="form-group nowrap">
+                        <label class="form-label" for="climateTempOffset">Temperature sensor correction (°C)</label>
+                        <input type="number" id="climateTempOffset" name="climateTempOffset" class="form-input" step="0.1" min="-15" max="15"
+                               value="{{ device_settings.climate_temp_offset or 0 }}"
+                               title="Added to the BME280 reading, e.g. -1.5 if it reads 1.5 °C too warm because of the Pi's heat">
+                    </div>
+
+                    <div class="form-group nowrap">
                         <label class="form-label" for="logSystemStats">Log System Stats</label>
                             <input type="checkbox" id="logSystemStats" name="logSystemStats" {% if device_settings.log_system_stats %}checked{% endif %}>
                         </label>

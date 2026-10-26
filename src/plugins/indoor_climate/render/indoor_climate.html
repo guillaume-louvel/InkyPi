@@ -1,0 +1,37 @@
+{% extends "plugin.html" %}
+
+{% macro courbe(titre, g) %}
+<section class="courbe">
+    <div class="courbe-titre">{{ titre }}{% if g %} <span class="extremes">min {{ g.min }} · max {{ g.max }}</span>{% endif %}</div>
+    {% if g %}
+    <svg viewBox="0 -4 {{ graphe_l }} {{ graphe_h + 30 }}" preserveAspectRatio="none">
+        {% for m in g.minuits %}<line x1="{{ m }}" y1="0" x2="{{ m }}" y2="{{ graphe_h }}" class="repere"/>{% endfor %}
+        {% for z in g.zone %}<line x1="0" y1="{{ z.y }}" x2="{{ graphe_l }}" y2="{{ z.y }}" class="zone"/>
+        <text x="{{ graphe_l - 4 }}" y="{{ z.y - 5 }}" class="zone-texte">{{ z.texte }}</text>{% endfor %}
+        {% for j in g.jours %}<text x="{{ j.x }}" y="{{ graphe_h + 24 }}" class="jour">{{ j.texte }}</text>{% endfor %}
+        <line x1="0" y1="{{ graphe_h }}" x2="{{ graphe_l }}" y2="{{ graphe_h }}" class="axe"/>
+        {% for s in g.segments %}<polyline points="{{ s }}" class="trace"/>{% endfor %}
+    </svg>
+    {% else %}
+    <p class="attente">Courbe disponible après quelques mesures</p>
+    {% endif %}
+</section>
+{% endmacro %}
+
+{% block content %}
+<div class="climat">
+    <div class="actuel">
+        <div class="lieu">Intérieur <span class="date">{{ date }}</span></div>
+        <div class="mesures">
+            <span class="temp">{{ temperature }}°</span>
+            <span class="hum">{{ humidite }}&nbsp;%</span>
+        </div>
+        <div class="confort">{{ confort }}</div>
+        {% if aerer %}<div class="aerer"><span class="aerer-titre">Fenêtres</span>{{ aerer }}</div>{% endif %}
+    </div>
+    <div class="courbes">
+        {{ courbe("Température · 7 jours", graphe_temp) }}
+        {{ courbe("Humidité · 7 jours", graphe_hum) }}
+    </div>
+</div>
+{% endblock %}

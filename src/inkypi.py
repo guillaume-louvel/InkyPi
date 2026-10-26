@@ -34,6 +34,7 @@ from blueprints.wifi import wifi_bp
 from jinja2 import ChoiceLoader, FileSystemLoader
 from plugins.plugin_registry import load_plugins
 from utils.wifi_manager import NetworkMonitor
+from utils import climate
 from waitress import serve
 
 
@@ -72,6 +73,13 @@ if not DEV_MODE and NetworkMonitor.is_supported():
     network_monitor = NetworkMonitor(device_config, display_manager, refresh_task)
     refresh_task.network_monitor = network_monitor
 
+# Indoor climate history from a BME280 sensor, if one is plugged in
+climate_recorder = None
+if not DEV_MODE:
+    climate_sensor = climate.open_sensor()
+    if climate_sensor:
+        climate_recorder = climate.ClimateRecorder(climate_sensor)
+
 load_plugins(device_config.get_plugins())
 
 # Store dependencies
@@ -108,6 +116,8 @@ if __name__ == '__main__':
 
     if network_monitor:
         network_monitor.start()
+    if climate_recorder:
+        climate_recorder.start()
 
     try:
         # Run the Flask app
@@ -129,4 +139,6 @@ if __name__ == '__main__':
     finally:
         if network_monitor:
             network_monitor.stop()
+        if climate_recorder:
+            climate_recorder.stop()
         refresh_task.stop()

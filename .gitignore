@@ -172,3 +172,6 @@ mock_display_output/
 # Static Files added by install/update_vendors.sh
 /src/static/scripts/
 /src/static/styles/
+
+# InkyPi indoor climate history (BME280 readings)
+src/config/climate.sqlite3*

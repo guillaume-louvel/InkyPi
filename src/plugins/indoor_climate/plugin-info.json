@@ -1,0 +1,5 @@
+{
+  "display_name": "Climat intérieur",
+  "id": "indoor_climate",
+  "class": "IndoorClimate"
+}

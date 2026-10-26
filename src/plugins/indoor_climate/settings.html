@@ -1,0 +1,19 @@
+<div class="form-group">
+    <label class="form-label">Météo extérieure (Open-Meteo, sans clé)</label>
+    <div class="form-group">
+        <span>Latitude et longitude du logement (pour savoir quand ouvrir les fenêtres)</span>
+        <input type="text" id="latitude" name="latitude" class="form-input" value="{{ defaults.latitude }}">
+        <input type="text" id="longitude" name="longitude" class="form-input" value="{{ defaults.longitude }}">
+    </div>
+    <p>La correction de température du capteur (chaleur du Pi) se règle dans les paramètres d'InkyPi.</p>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        if (loadPluginSettings) {
+            ['latitude', 'longitude'].forEach(id => {
+                if (pluginSettings[id]) document.getElementById(id).value = pluginSettings[id];
+            });
+        }
+    });
+</script>

@@ -51,6 +51,12 @@ def save_settings():
         plugin_cycle_interval_seconds = calculate_seconds(int(interval), unit)
         if plugin_cycle_interval_seconds > 86400 or plugin_cycle_interval_seconds <= 0:
             return jsonify({"error": "Plugin cycle interval must be less than 24 hours"}), 400
+        try:
+            climate_temp_offset = float((form_data.get("climateTempOffset") or "0").replace(",", "."))
+        except ValueError:
+            return jsonify({"error": "Temperature correction must be a number"}), 400
+        if not -15 <= climate_temp_offset <= 15:
+            return jsonify({"error": "Temperature correction must be between -15 and 15 °C"}), 400
 
         settings = {
             "name": form_data.get("deviceName"),
@@ -60,6 +66,7 @@ def save_settings():
             "timezone": form_data.get("timezoneName"),
             "time_format": form_data.get("timeFormat"),
             "plugin_cycle_interval_seconds": plugin_cycle_interval_seconds,
+            "climate_temp_offset": climate_temp_offset,
             "image_settings": {
                 "saturation": float(form_data.get("saturation", "1.0")),
                 "brightness": float(form_data.get("brightness", "1.0")),
