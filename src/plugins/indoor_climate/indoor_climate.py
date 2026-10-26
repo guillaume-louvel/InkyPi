@@ -16,7 +16,7 @@ JOURS = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
 DEFAUTS = {"latitude": "48.82", "longitude": "2.47"}  # Joinville-le-Pont
 
 SEMAINE = timedelta(days=7)
-TROU_MAX = timedelta(minutes=25)   # au-delà, la courbe est interrompue (Pi éteint)
+TROU_MAX = timedelta(seconds=climate.INTERVAL_SECONDS * 1.5)  # au-delà, la courbe est interrompue (Pi éteint)
 CHAUD = 24                         # °C : au-dessus, aérer sert à rafraîchir
 ECART_FRAIS = 2                    # °C plus frais dehors pour que ça vaille la peine
 PLUIE_MM = 0.2                     # par heure : on n'ouvre pas sous la pluie
@@ -194,7 +194,7 @@ class IndoorClimate(BasePlugin):
         correction = float(device_config.get_config("climate_temp_offset", default=0) or 0)
 
         historique = climate.history(SEMAINE.total_seconds(), correction)
-        if not historique or maintenant - historique[-1].time > timedelta(minutes=30):
+        if not historique or maintenant - historique[-1].time > timedelta(seconds=climate.MAX_AGE_SECONDS):
             raise RuntimeError("Aucune mesure récente du capteur BME280. Est-il bien branché ? "
                                "(sudo i2cdetect -y 1 doit afficher 76 ou 77)")
         actuel = historique[-1]
@@ -206,9 +206,9 @@ class IndoorClimate(BasePlugin):
             logger.warning(f"Météo extérieure indisponible : {ex}")
             aerer = ""
 
-        local = maintenant.astimezone(tz)
+        mesure = actuel.time.astimezone(tz)
         params = {
-            "date": f"{JOURS[local.weekday()].capitalize()} {local:%d/%m} · {local.hour}h{local:%M}",
+            "date": f"mesuré à {mesure.hour}h{mesure:%M}".replace("h00", "h"),
             "temperature": nombre(actuel.temperature),
             "humidite": round(actuel.humidity),
             "confort": confort(actuel.temperature, actuel.humidity),

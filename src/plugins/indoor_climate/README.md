@@ -2,8 +2,9 @@
 
 Température et humidité de la pièce, mesurées par un capteur BME280 branché sur le Pi.
 
-- **Mesures** : relevées toutes les 10 minutes par InkyPi, qui garde une semaine
-  d'historique (≈ 1 000 lignes, `src/config/climate.sqlite3`). L'enregistrement démarre
+- **Mesures** : relevées toutes les heures par InkyPi, qui garde une semaine
+  d'historique (≈ 170 lignes, `src/config/climate.sqlite3`). L'heure de la dernière
+  mesure est affichée en haut de l'écran. L'enregistrement démarre
   tout seul si un BME280 est détecté (adresse 0x76 ou 0x77 : `sudo i2cdetect -y 1`).
 - **Confort** : 18–24 °C et 40–60 % d'humidité sont considérés comme confortables ;
   en dehors, un message l'indique (air sec, humide, risque de moisissures, frais, chaud).
@@ -21,4 +22,4 @@ puis règle **Temperature sensor correction** dans les paramètres d'InkyPi (ex.
 L'humidité est recalculée en conséquence, et la correction s'applique aussi à
 l'historique déjà enregistré.
 
-Un rafraîchissement toutes les 30 à 60 minutes suffit.
+Une mesure par heure : rafraîchir le plugin toutes les heures suffit.

@@ -1,7 +1,7 @@
-"""Indoor temperature and humidity from a BME280 sensor, recorded every 10 minutes.
+"""Indoor temperature and humidity from a BME280 sensor, recorded every hour.
 
 ClimateRecorder reads the sensor in a background thread and keeps one week of readings in a small
-SQLite database (about 1,000 rows). Plugins read them back with latest() and history(), which apply
+SQLite database (about 170 rows). Plugins read them back with latest() and history(), which apply
 the temperature correction set on the Settings page ("climate_temp_offset"). Raw readings are
 stored, so the correction can be changed at any time, history included.
 """
@@ -20,7 +20,8 @@ from utils.app_utils import resolve_path
 logger = logging.getLogger(__name__)
 
 DB_FILE = resolve_path(os.path.join("config", "climate.sqlite3"))
-INTERVAL_SECONDS = 10 * 60
+INTERVAL_SECONDS = 60 * 60
+MAX_AGE_SECONDS = INTERVAL_SECONDS + 30 * 60  # older than this, the sensor is considered missing
 KEEP_SECONDS = 7 * 24 * 3600 + 3600  # a week, plus a margin for the start of the week graph
 ADDRESSES = (0x76, 0x77)  # the two addresses a BME280 can use
 I2C_BUS = 1
@@ -106,14 +107,14 @@ def history(seconds, offset=0, db_file=None, now=None):
     return [corrected(Reading(datetime.fromtimestamp(ts, timezone.utc), t, h), offset) for ts, t, h in rows]
 
 
-def latest(offset=0, max_age_seconds=30 * 60, db_file=None, now=None):
+def latest(offset=0, max_age_seconds=MAX_AGE_SECONDS, db_file=None, now=None):
     """The most recent reading if it is fresh enough, else None (sensor unplugged, recorder stopped)."""
     readings = history(max_age_seconds, offset, db_file, now)
     return readings[-1] if readings else None
 
 
 class ClimateRecorder:
-    """Background thread storing a sensor reading every 10 minutes."""
+    """Background thread storing a sensor reading every hour."""
 
     def __init__(self, sensor, db_file=None):
         self.sensor = sensor
@@ -142,5 +143,5 @@ class ClimateRecorder:
                 self.record()
             except Exception:
                 logger.exception("Failed to read the BME280")
-            # Align on the clock (…:00, …:10, …:20) so the history lines up
+            # Align on the clock (14:00, 15:00…) so the history lines up
             self.stop_event.wait(INTERVAL_SECONDS - time.time() % INTERVAL_SECONDS)

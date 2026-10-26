@@ -44,8 +44,9 @@ class TestStorage:
         assert [r.temperature for r in climate.history(30 * 24 * 3600, db_file=db, now=NOW)] == [19.0, 21.0]
         assert climate.latest(db_file=db, now=NOW).temperature == 21.0
         assert climate.latest(offset=-1, db_file=db, now=NOW).temperature == 20.0
-        # Nothing recent (sensor unplugged for an hour): no reading rather than an old one
-        assert climate.latest(db_file=db, now=NOW + timedelta(hours=1)) is None
+        # Nothing recent (sensor unplugged for 2 hours): no reading rather than an old one
+        assert climate.latest(db_file=db, now=NOW + timedelta(minutes=70)).temperature == 21.0
+        assert climate.latest(db_file=db, now=NOW + timedelta(hours=2)) is None
 
     def test_missing_database(self, tmp_path):
         assert climate.history(3600, db_file=str(tmp_path / "none.sqlite3")) == []
@@ -108,7 +109,7 @@ class TestWhenToOpenTheWindows:
 class TestWeekGraph:
 
     def test_breaks_at_gaps_and_marks_days(self):
-        week = [reading(m) for m in range(7 * 24 * 60, -1, -10) if not 600 <= m <= 900]  # Pi off 5 h
+        week = [reading(m) for m in range(7 * 24 * 60, -1, -60) if not 600 <= m <= 900]  # Pi off 5 h
         g = graphe(week, lambda r: r.humidity, NOW, PARIS, 30, 70, zone=(40, 60), unite=" %")
         assert len(g["segments"]) == 2
         assert len(g["minuits"]) == 7
@@ -117,7 +118,7 @@ class TestWeekGraph:
 
     def test_midnight_stays_at_midnight_across_the_clock_change(self):
         # Clocks went back on Sunday 25 October: Saturday and Sunday midnights are 25 h apart
-        week = [reading(m) for m in range(7 * 24 * 60, -1, -10)]
+        week = [reading(m) for m in range(7 * 24 * 60, -1, -60)]
         g = graphe(week, lambda r: r.temperature, NOW, PARIS, 18, 22)
         gaps = sorted(round(b - a, 1) for a, b in zip(sorted(g["minuits"]), sorted(g["minuits"])[1:]))
         day = 700 / 7
