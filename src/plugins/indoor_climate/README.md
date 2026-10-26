@@ -1,6 +1,15 @@
 # Plugin InkyPi « Climat intérieur »
 
-Température et humidité de la pièce, mesurées par un capteur BME280 branché sur le Pi.
+Température et humidité de la pièce (capteur BME280 branché sur le Pi), face à celles du
+dehors (Open-Meteo, sans clé), avec le confort de la pièce et le moment pour aérer.
+
+## Dispositions (réglage « Disposition »)
+
+- **Grand format** (par défaut) : intérieur et extérieur côte à côte en grand, lisibles de
+  loin ; conseil d'aération en bas.
+- **Avec les courbes de la semaine** : les mêmes informations en cartes, plus les courbes
+  de température et d'humidité sur 7 jours (trait plein : intérieur, pointillés : extérieur).
+  L'historique extérieur vient d'Open-Meteo : rien de plus n'est stocké sur le Pi.
 
 - **Mesures** : relevées toutes les heures par InkyPi, qui garde une semaine
   d'historique (≈ 170 lignes, `src/config/climate.sqlite3`). L'heure de la dernière
@@ -8,12 +17,13 @@ Température et humidité de la pièce, mesurées par un capteur BME280 branché
   tout seul si un BME280 est détecté (adresse 0x76 ou 0x77 : `sudo i2cdetect -y 1`).
 - **Confort** : 18–24 °C et 40–60 % d'humidité sont considérés comme confortables ;
   en dehors, un message l'indique (air sec, humide, risque de moisissures, frais, chaud).
-- **Fenêtres** : à partir de la météo Open-Meteo (sans clé) du logement, dit s'il est
+- **Extérieur** : température, humidité, ciel, ressenti et min/max du jour au logement.
+- **Fenêtres** : à partir de la météo Open-Meteo du logement, dit s'il est
   bon d'aérer maintenant, ou à partir de quelle heure. Pièce chaude (> 24 °C) : quand il
   fait au moins 2 °C plus frais dehors. Sinon : quand l'air du dehors contient moins
   d'eau que celui de la pièce. Jamais sous la pluie.
-- **Courbes** : température et humidité sur 7 jours ; les pointillés marquent la plage
-  d'humidité confortable. Une courbe interrompue signale que le Pi était éteint.
+- **Courbes** (disposition avec courbes) : les pointillés horizontaux marquent la plage
+  d'humidité confortable. Une courbe intérieure interrompue signale que le Pi était éteint.
 
 ## Correction de température
 

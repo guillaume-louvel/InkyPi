@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 import pytz
 
-from plugins.indoor_climate.indoor_climate import Meteo, confort, graphe, moment_pour_aerer
+from plugins.indoor_climate.indoor_climate import Meteo, analyser_meteo, confort, graphe, moment_pour_aerer
 from utils import climate
 from utils.climate import ClimateRecorder, Reading, corrected
 
@@ -108,19 +108,58 @@ class TestWhenToOpenTheWindows:
 
 class TestWeekGraph:
 
-    def test_breaks_at_gaps_and_marks_days(self):
-        week = [reading(m) for m in range(7 * 24 * 60, -1, -60) if not 600 <= m <= 900]  # Pi off 5 h
-        g = graphe(week, lambda r: r.humidity, NOW, PARIS, 30, 70, zone=(40, 60), unite=" %")
-        assert len(g["segments"]) == 2
+    def test_indoor_and_outdoor_share_one_scale(self):
+        inside = [(NOW - timedelta(minutes=m), 50.0) for m in range(7 * 24 * 60, -1, -60) if not 600 <= m <= 900]
+        outside = [(NOW - timedelta(minutes=m), 90.0) for m in range(7 * 24 * 60, -1, -60)]
+        g = graphe({"int": inside, "ext": outside}, NOW, PARIS, 30, 70, " %", zone=(40, 60))
+        assert len(g["traces"]["int"]) == 2          # broken where the Pi was off for 5 h
+        assert len(g["traces"]["ext"]) == 1
+        # 50 % inside sits below 90 % outside on the same axis (y grows downwards)
+        y_in = float(g["traces"]["int"][0].split()[0].split(",")[1])
+        y_out = float(g["traces"]["ext"][0].split()[0].split(",")[1])
+        assert y_in > y_out
         assert len(g["minuits"]) == 7
-        assert [j["texte"] for j in g["jours"]][0] == "lun."      # today, after noon
+        assert g["jours"][0]["texte"] == "lun."      # today, after noon
         assert [z["texte"] for z in g["zone"]] == ["40 %", "60 %"]
+
+    def test_no_graph_without_indoor_readings(self):
+        assert graphe({"int": [], "ext": [(NOW, 10.0), (NOW, 11.0)]}, NOW, PARIS, 18, 22) is None
 
     def test_midnight_stays_at_midnight_across_the_clock_change(self):
         # Clocks went back on Sunday 25 October: Saturday and Sunday midnights are 25 h apart
-        week = [reading(m) for m in range(7 * 24 * 60, -1, -60)]
-        g = graphe(week, lambda r: r.temperature, NOW, PARIS, 18, 22)
+        week = [(NOW - timedelta(minutes=m), 20.0) for m in range(7 * 24 * 60, -1, -60)]
+        g = graphe({"int": week}, NOW, PARIS, 18, 22)
         gaps = sorted(round(b - a, 1) for a, b in zip(sorted(g["minuits"]), sorted(g["minuits"])[1:]))
         day = 700 / 7
         assert gaps[-1] == pytest.approx(day * 25 / 24, abs=0.2)
         assert gaps[0] == pytest.approx(day, abs=0.2)
+
+
+class TestOutdoorWeather:
+
+    def response(self):
+        # Hourly from Saturday 00:00 UTC to Wednesday 00:00 UTC, temperature = hour of the day
+        hours = [datetime(2026, 10, 24, tzinfo=timezone.utc) + timedelta(hours=k) for k in range(96)]
+        return {
+            "current": {"temperature_2m": 9.4, "relative_humidity_2m": 88, "apparent_temperature": 7.2,
+                        "precipitation": 0, "weather_code": 3},
+            "hourly": {"time": [h.strftime("%Y-%m-%dT%H:%M") for h in hours],
+                       "temperature_2m": [float(h.hour) for h in hours],
+                       "relative_humidity_2m": [80] * len(hours),
+                       "precipitation": [0] * len(hours)},
+        }
+
+    def test_now_today_forecast_and_history(self):
+        ext = analyser_meteo(self.response(), PARIS, NOW)
+        assert (ext.actuel.temperature, ext.actuel.humidite, ext.ressenti, ext.etat) == (9.4, 88, 7.2, "Couvert")
+        # Monday in Paris = Sunday 23:00 UTC to Monday 23:00 UTC: hours 23 and 0..22
+        assert (ext.t_min, ext.t_max) == (0.0, 23.0)
+        assert len(ext.prevues) == 24 and ext.prevues[0].time == NOW + timedelta(hours=1)
+        assert ext.historique[-1].time == NOW and ext.historique[0].time == datetime(2026, 10, 24, tzinfo=timezone.utc)
+        assert ext.pour_aerer()[0] is ext.actuel
+
+    def test_missing_values_are_skipped(self):
+        data = self.response()
+        data["hourly"]["temperature_2m"][62] = None   # Monday 14:00 UTC
+        ext = analyser_meteo(data, PARIS, NOW)
+        assert all(m.time != NOW + timedelta(hours=1) for m in ext.prevues)

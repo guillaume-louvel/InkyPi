@@ -2,7 +2,7 @@
 
 {% macro courbe(titre, g) %}
 <section class="courbe">
-    <div class="courbe-titre">{{ titre }}{% if g %} <span class="extremes">min {{ g.min }} · max {{ g.max }}</span>{% endif %}</div>
+    <div class="courbe-titre">{{ titre }}</div>
     {% if g %}
     <svg viewBox="0 -4 {{ graphe_l }} {{ graphe_h + 30 }}" preserveAspectRatio="none">
         {% for m in g.minuits %}<line x1="{{ m }}" y1="0" x2="{{ m }}" y2="{{ graphe_h }}" class="repere"/>{% endfor %}
@@ -10,7 +10,8 @@
         <text x="{{ graphe_l - 4 }}" y="{{ z.y - 5 }}" class="zone-texte">{{ z.texte }}</text>{% endfor %}
         {% for j in g.jours %}<text x="{{ j.x }}" y="{{ graphe_h + 24 }}" class="jour">{{ j.texte }}</text>{% endfor %}
         <line x1="0" y1="{{ graphe_h }}" x2="{{ graphe_l }}" y2="{{ graphe_h }}" class="axe"/>
-        {% for s in g.segments %}<polyline points="{{ s }}" class="trace"/>{% endfor %}
+        {% for s in g.traces.ext or [] %}<polyline points="{{ s }}" class="trace-ext"/>{% endfor %}
+        {% for s in g.traces.int %}<polyline points="{{ s }}" class="trace-int"/>{% endfor %}
     </svg>
     {% else %}
     <p class="attente">Courbe disponible après quelques mesures</p>
@@ -18,20 +19,58 @@
 </section>
 {% endmacro %}
 
+{% macro bandeau() %}
+{% if aerer %}<div class="aerer"><b>FENÊTRES</b> {{ aerer }}</div>{% endif %}
+{% endmacro %}
+
 {% block content %}
-<div class="climat">
-    <div class="actuel">
-        <div class="lieu">Intérieur <span class="date">{{ date }}</span></div>
-        <div class="mesures">
-            <span class="temp">{{ temperature }}°</span>
-            <span class="hum">{{ humidite }}&nbsp;%</span>
+{% if courbes %}
+<div class="climat avec-courbes">
+    <div class="cartes">
+        <div class="carte">
+            <div class="etiq">Intérieur <span>{{ interieur.mesure }}</span></div>
+            <div class="val"><span class="t">{{ interieur.temperature }}°</span><span class="h">{{ interieur.humidite }}&nbsp;%</span></div>
+            <span class="badge">{{ interieur.confort }}</span>
         </div>
-        <div class="confort">{{ confort }}</div>
-        {% if aerer %}<div class="aerer"><span class="aerer-titre">Fenêtres</span>{{ aerer }}</div>{% endif %}
+        <div class="carte">
+            <div class="etiq">Extérieur <span>{{ exterieur.etat if exterieur }}</span></div>
+            {% if exterieur %}
+            <div class="val"><span class="t">{{ exterieur.temperature }}°</span><span class="h">{{ exterieur.humidite }}&nbsp;%</span></div>
+            <div class="sous">ressenti {{ exterieur.ressenti }}°{% if exterieur.min_max %} · {{ exterieur.min_max }}{% endif %}</div>
+            {% else %}<div class="sous indispo">Météo indisponible</div>{% endif %}
+        </div>
     </div>
+    {{ bandeau() }}
     <div class="courbes">
         {{ courbe("Température · 7 jours", graphe_temp) }}
         {{ courbe("Humidité · 7 jours", graphe_hum) }}
     </div>
+    <div class="legende">
+        <svg viewBox="0 0 30 10"><line x1="0" y1="5" x2="30" y2="5" class="trace-int"/></svg> intérieur
+        <svg viewBox="0 0 30 10"><line x1="0" y1="5" x2="30" y2="5" class="trace-ext"/></svg> extérieur
+    </div>
 </div>
+{% else %}
+<div class="climat grand">
+    <div class="moities">
+        <div class="moitie">
+            <div class="etiq">Intérieur</div>
+            <div class="t">{{ interieur.temperature }}°</div>
+            <div class="h">{{ interieur.humidite }}&nbsp;%</div>
+            <span class="badge">{{ interieur.confort }}</span>
+            <div class="sous">{{ interieur.mesure }}</div>
+        </div>
+        <div class="moitie">
+            <div class="etiq">Extérieur</div>
+            {% if exterieur %}
+            <div class="t">{{ exterieur.temperature }}°</div>
+            <div class="h">{{ exterieur.humidite }}&nbsp;%</div>
+            <div class="sous">{% if exterieur.etat %}{{ exterieur.etat }} · {% endif %}ressenti {{ exterieur.ressenti }}°</div>
+            {% if exterieur.min_max %}<div class="sous">{{ exterieur.min_max }}</div>{% endif %}
+            {% else %}<div class="sous indispo">Météo indisponible</div>{% endif %}
+        </div>
+    </div>
+    {{ bandeau() }}
+</div>
+{% endif %}
 {% endblock %}

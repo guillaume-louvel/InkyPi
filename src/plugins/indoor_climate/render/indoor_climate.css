@@ -7,57 +7,80 @@
   width: 100%;
   height: 100%;
   display: flex;
-  gap: 3vmin;
+  flex-direction: column;
 }
 
-.actuel {
-  flex: 0 0 42%;
+.etiq { font-size: 3.2vmin; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.etiq span { font-weight: normal; letter-spacing: 0; text-transform: none; }
+.t { font-weight: 600; line-height: 1; }
+.h { font-weight: 600; line-height: 1; }
+.sous { font-size: 3.5vmin; line-height: 1.3; }
+.indispo { margin-top: 2vmin; }
+.badge {
+  display: inline-block;
+  border: 2px solid #000;
+  border-radius: 1.6vmin;
+  padding: 0 2vmin;
+  font-weight: 600;
+  font-size: 3.8vmin;
+  line-height: 1.4;
+}
+.aerer {
+  background: #000;
+  color: #fff;
+  border-radius: 2vmin;
+  padding: 1.4vmin 3vmin;
+  font-size: 4vmin;
+  line-height: 1.25;
+}
+.aerer b { letter-spacing: .06em; margin-right: 1vmin; }
+
+/* Disposition « grand format » (par défaut) */
+.grand .moities { flex: 1; display: flex; min-height: 0; }
+.grand .moitie {
+  flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 1.5vmin;
+  align-items: center;
+  text-align: center;
+  gap: 1.4vmin;
   min-width: 0;
 }
-.lieu { font-size: 5vmin; font-weight: 600; }
-.date { font-weight: normal; font-size: 3.6vmin; }
-.mesures { display: flex; align-items: baseline; gap: 4vmin; line-height: 1; }
-.temp { font-size: 16.5vmin; font-weight: 600; }
-.hum { font-size: 8.5vmin; font-weight: 600; }
-.confort {
-  font-size: 4.6vmin;
-  font-weight: 600;
-  border: 3px solid #000;
-  border-radius: 1.5vmin;
-  padding: 0.6vmin 2vmin;
-  align-self: flex-start;
-}
-.aerer { font-size: 4vmin; line-height: 1.25; margin-top: 1vmin; }
-.aerer-titre { display: block; font-weight: 600; font-size: 3.4vmin; text-transform: uppercase; letter-spacing: 0.05em; }
+.grand .moitie + .moitie { border-left: 3px solid #000; }
+.grand .etiq { font-size: 4.2vmin; }
+.grand .t { font-size: 21vmin; }
+.grand .h { font-size: 9.5vmin; }
+.grand .aerer { font-size: 4.6vmin; text-align: center; margin-top: 2.5vmin; }
 
-.courbes {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2vmin;
-  border-left: 3px solid #000;
-  padding-left: 3vmin;
-}
-.courbe { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.courbe-titre { font-size: 3.8vmin; font-weight: 600; }
-.extremes { font-weight: normal; font-size: 3.2vmin; }
+/* Disposition « avec courbes » */
+.avec-courbes { gap: 2vmin; }
+.cartes { display: flex; gap: 3vmin; }
+.carte { flex: 1; min-width: 0; border: 3px solid #000; border-radius: 2.4vmin; padding: 1.4vmin 3vmin; }
+.carte .etiq { display: flex; justify-content: space-between; gap: 2vmin; }
+.carte .val { display: flex; align-items: baseline; gap: 3vmin; margin: 0.8vmin 0; }
+.carte .t { font-size: 13vmin; }
+.carte .h { font-size: 7vmin; }
+.courbes { flex: 1; min-height: 0; display: flex; gap: 4vmin; }
+.courbe { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.courbe-titre { font-size: 3.2vmin; font-weight: 600; }
 .courbe svg { flex: 1; width: 100%; min-height: 0; overflow: visible; }
-.trace { fill: none; stroke: #000; stroke-width: 3.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
-.axe { stroke: #000; stroke-width: 2; vector-effect: non-scaling-stroke; }
-.repere { stroke: #000; stroke-width: 1; vector-effect: non-scaling-stroke; }
-.zone { stroke: #000; stroke-width: 1.5; stroke-dasharray: 6 6; vector-effect: non-scaling-stroke; }
-.jour { font-size: 20px; text-anchor: middle; font-family: "Jost"; }
-.zone-texte { font-size: 16px; text-anchor: end; font-family: "Jost"; paint-order: stroke; stroke: #fff; stroke-width: 5px; }
+.legende { font-size: 3vmin; text-align: right; line-height: 1; }
+.legende svg { width: 6vmin; height: 2vmin; margin-left: 2vmin; vertical-align: middle; }
 .attente { font-size: 3.4vmin; margin: auto; }
 
-/* Écran en portrait : mesures au-dessus, courbes en dessous */
+.trace-int { fill: none; stroke: #000; stroke-width: 3.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.trace-ext { fill: none; stroke: #000; stroke-width: 1.5; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.axe { stroke: #000; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.repere { stroke: #000; stroke-width: 0.7; vector-effect: non-scaling-stroke; }
+.zone { stroke: #000; stroke-width: 1; stroke-dasharray: 2 5; vector-effect: non-scaling-stroke; }
+.jour { font-size: 20px; text-anchor: middle; font-family: "Jost"; }
+.zone-texte { font-size: 16px; text-anchor: end; font-family: "Jost"; paint-order: stroke; stroke: #fff; stroke-width: 5px; }
+
+/* Écran en portrait : on empile */
 @media (orientation: portrait) {
-  .climat { flex-direction: column; }
-  .actuel { flex: 0 0 auto; }
-  .courbes { border-left: none; border-top: 3px solid #000; padding: 2vmin 0 0; }
+  .grand .moities { flex-direction: column; }
+  .grand .moitie + .moitie { border-left: none; border-top: 3px solid #000; }
+  .grand .t { font-size: 17vmin; }
+  .cartes, .courbes { flex-direction: column; }
 }

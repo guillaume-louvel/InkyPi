@@ -1,12 +1,13 @@
-"""Climat intérieur : température et humidité du capteur BME280, conseils, courbes sur 7 jours et moment pour aérer."""
+"""Climat intérieur et extérieur : capteur BME280, météo Open-Meteo, confort, moment pour aérer et, au choix, courbes sur 7 jours."""
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import pytz
 import requests
 
 from plugins.base_plugin.base_plugin import BasePlugin
+from plugins.transport_idfm.meteo import ETATS
 from utils import climate
 
 logger = logging.getLogger(__name__)
@@ -68,26 +69,62 @@ class Meteo:
     pluie: float  # mm sur l'heure
 
 
-def previsions(latitude, longitude):
-    """Maintenant, puis heure par heure sur 24 h (heures en UTC)."""
-    r = requests.get(OPEN_METEO, timeout=20, params={
+@dataclass
+class Exterieur:
+    actuel: Meteo
+    ressenti: float
+    etat: str
+    t_min: float | None = None          # aujourd'hui (journée locale)
+    t_max: float | None = None
+    prevues: list = field(default_factory=list)      # les 24 h à venir, heure par heure
+    historique: list = field(default_factory=list)   # les 7 derniers jours (disposition avec courbes)
+
+    def pour_aerer(self):
+        return [self.actuel] + self.prevues
+
+
+def meteo_exterieure(latitude, longitude, tz, semaine=False):
+    """Une seule requête Open-Meteo : maintenant, les 24 h à venir et, si demandé, les 7 derniers jours."""
+    params = {
         "latitude": latitude, "longitude": longitude,
-        "current": "temperature_2m,relative_humidity_2m,precipitation",
+        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code",
         "hourly": "temperature_2m,relative_humidity_2m,precipitation",
         "forecast_days": 2,
-    })
+    }
+    if semaine:
+        params["past_days"] = 7
+    r = requests.get(OPEN_METEO, timeout=20, params=params)
     r.raise_for_status()
-    data = r.json()
-    maintenant = datetime.now(timezone.utc)
+    return analyser_meteo(r.json(), tz, datetime.now(timezone.utc))
+
+
+def analyser_meteo(data, tz, maintenant):
+    """Réponse Open-Meteo (heures en UTC) -> Exterieur."""
     actuel = data.get("current") or {}
-    res = [Meteo(maintenant, actuel["temperature_2m"], actuel["relative_humidity_2m"], actuel.get("precipitation") or 0)]
+    ext = Exterieur(
+        actuel=Meteo(maintenant, actuel["temperature_2m"], actuel["relative_humidity_2m"], actuel.get("precipitation") or 0),
+        ressenti=actuel.get("apparent_temperature", actuel["temperature_2m"]),
+        etat=ETATS.get(int(actuel.get("weather_code") or 0), ""),
+    )
+    minuit = tz.localize(datetime.combine(maintenant.astimezone(tz).date(), datetime.min.time()))
+    lendemain = tz.localize(datetime.combine(minuit.date() + timedelta(days=1), datetime.min.time()))
+    aujourdhui = []
     h = data.get("hourly") or {}
     for t, temp, hum, pluie in zip(h.get("time", []), h.get("temperature_2m", []),
                                    h.get("relative_humidity_2m", []), h.get("precipitation", [])):
-        quand = datetime.fromisoformat(t).replace(tzinfo=timezone.utc)
-        if maintenant < quand <= maintenant + timedelta(hours=24) and None not in (temp, hum):
-            res.append(Meteo(quand, temp, hum, pluie or 0))
-    return res
+        if None in (temp, hum):
+            continue
+        meteo = Meteo(datetime.fromisoformat(t).replace(tzinfo=timezone.utc), temp, hum, pluie or 0)
+        if minuit <= meteo.time < lendemain:
+            aujourdhui.append(temp)
+        if meteo.time <= maintenant:
+            if maintenant - meteo.time <= SEMAINE:
+                ext.historique.append(meteo)
+        elif meteo.time <= maintenant + timedelta(hours=24):
+            ext.prevues.append(meteo)
+    if aujourdhui:
+        ext.t_min, ext.t_max = min(aujourdhui), max(aujourdhui)
+    return ext
 
 
 def moment_pour_aerer(interieur, meteo, tz):
@@ -128,16 +165,17 @@ def moment_pour_aerer(interieur, meteo, tz):
 
 
 # ------------------------------------------------------------------ courbes
-def graphe(historique, valeur, maintenant, tz, bas_min, haut_min, decimales=0, unite="", zone=None):
-    """Courbe des 7 derniers jours pour le SVG : segments (interrompus aux trous), jours et extrêmes.
+def graphe(courbes, maintenant, tz, bas_min, haut_min, unite="", zone=None):
+    """Courbes des 7 derniers jours pour le SVG, sur une même échelle.
 
-    L'échelle couvre au moins [bas_min, haut_min] pour ne pas exagérer de petites variations.
-    `zone` : (bas, haut) tracés en pointillés, par exemple la plage d'humidité confortable."""
+    `courbes` : {"int": [(heure, valeur)], "ext": [...]}. Chaque courbe est découpée en segments,
+    interrompus aux trous (Pi éteint). L'échelle couvre au moins [bas_min, haut_min] pour ne pas
+    exagérer de petites variations ; `zone` : valeurs tracées en pointillés (plage confortable)."""
     debut = maintenant - SEMAINE
-    points = [(r.time, valeur(r)) for r in historique if r.time >= debut]
-    if len(points) < 2:
+    courbes = {nom: [(t, v) for t, v in points if debut <= t <= maintenant] for nom, points in courbes.items()}
+    if len(courbes.get("int", [])) < 2:
         return None
-    valeurs = [v for _, v in points]
+    valeurs = [v for points in courbes.values() for _, v in points]
     bas, haut = min(min(valeurs), bas_min), max(max(valeurs), haut_min)
 
     def x(t):
@@ -146,14 +184,17 @@ def graphe(historique, valeur, maintenant, tz, bas_min, haut_min, decimales=0, u
     def y(v):
         return round(GRAPHE_H - (v - bas) / (haut - bas) * GRAPHE_H, 1)
 
-    segments, courant, precedent = [], [], None
-    for t, v in points:
-        if precedent and t - precedent > TROU_MAX and courant:
-            segments.append(courant)
-            courant = []
-        courant.append(f"{x(t)},{y(v)}")
-        precedent = t
-    segments.append(courant)
+    traces = {}
+    for nom, points in courbes.items():
+        segments, courant, precedent = [], [], None
+        for t, v in points:
+            if precedent and t - precedent > TROU_MAX and courant:
+                segments.append(courant)
+                courant = []
+            courant.append(f"{x(t)},{y(v)}")
+            precedent = t
+        segments.append(courant)
+        traces[nom] = [" ".join(seg) for seg in segments if len(seg) > 1]
 
     # Un trait à chaque minuit, le nom du jour au milieu de sa journée
     # (localize() pour que minuit reste minuit les jours de changement d'heure)
@@ -169,12 +210,10 @@ def graphe(historique, valeur, maintenant, tz, bas_min, haut_min, decimales=0, u
             jours.append({"x": x(midi), "texte": JOURS[date.weekday()]})
 
     return {
-        "segments": [" ".join(s) for s in segments if len(s) > 1],
+        "traces": traces,
         "minuits": minuits,
         "jours": jours,
         "zone": [{"y": y(v), "texte": f"{v}{unite}"} for v in zone] if zone else [],
-        "min": nombre(min(valeurs), decimales) + unite,
-        "max": nombre(max(valeurs), decimales) + unite,
     }
 
 
@@ -199,26 +238,43 @@ class IndoorClimate(BasePlugin):
                                "(sudo i2cdetect -y 1 doit afficher 76 ou 77)")
         actuel = historique[-1]
 
+        courbes = settings.get("layout") == "graphs"
+        exterieur = None
         try:
-            aerer = moment_pour_aerer(actuel, previsions(settings.get("latitude") or DEFAUTS["latitude"],
-                                                         settings.get("longitude") or DEFAUTS["longitude"]), tz)
+            exterieur = meteo_exterieure(settings.get("latitude") or DEFAUTS["latitude"],
+                                         settings.get("longitude") or DEFAUTS["longitude"], tz, semaine=courbes)
         except Exception as ex:  # noqa: BLE001 - l'intérieur reste affiché
             logger.warning(f"Météo extérieure indisponible : {ex}")
-            aerer = ""
 
         mesure = actuel.time.astimezone(tz)
         params = {
-            "date": f"mesuré à {mesure.hour}h{mesure:%M}".replace("h00", "h"),
-            "temperature": nombre(actuel.temperature),
-            "humidite": round(actuel.humidity),
-            "confort": confort(actuel.temperature, actuel.humidity),
-            "aerer": aerer,
-            "graphe_temp": graphe(historique, lambda r: r.temperature, maintenant, tz, 18, 22, 1, "°"),
-            "graphe_hum": graphe(historique, lambda r: r.humidity, maintenant, tz, 30, 70, 0, " %",
-                                 zone=HUMIDITE_CONFORT),
+            "courbes": courbes,
+            "interieur": {
+                "temperature": nombre(actuel.temperature),
+                "humidite": round(actuel.humidity),
+                "confort": confort(actuel.temperature, actuel.humidity),
+                "mesure": f"mesuré à {mesure.hour}h{mesure:%M}".replace("h00", "h"),
+            },
+            "exterieur": {
+                "temperature": nombre(exterieur.actuel.temperature),
+                "humidite": round(exterieur.actuel.humidite),
+                "etat": exterieur.etat,
+                "ressenti": nombre(exterieur.ressenti, 0),
+                "min_max": (f"min {nombre(exterieur.t_min, 0)}° / max {nombre(exterieur.t_max, 0)}° aujourd'hui"
+                            if exterieur.t_min is not None else ""),
+            } if exterieur else None,
+            "aerer": moment_pour_aerer(actuel, exterieur.pour_aerer(), tz) if exterieur else "",
             "graphe_l": GRAPHE_L, "graphe_h": GRAPHE_H,
             "plugin_settings": settings,
         }
+        if courbes:
+            dehors = exterieur.historique if exterieur else []
+            params["graphe_temp"] = graphe({"int": [(r.time, r.temperature) for r in historique],
+                                            "ext": [(m.time, m.temperature) for m in dehors]},
+                                           maintenant, tz, 18, 22, "°")
+            params["graphe_hum"] = graphe({"int": [(r.time, r.humidity) for r in historique],
+                                           "ext": [(m.time, m.humidite) for m in dehors]},
+                                          maintenant, tz, 30, 70, " %", zone=HUMIDITE_CONFORT)
         image = self.render_image(dimensions, "indoor_climate.html", "indoor_climate.css", params)
         if image is None:
             raise RuntimeError("Le rendu de l'image a échoué.")

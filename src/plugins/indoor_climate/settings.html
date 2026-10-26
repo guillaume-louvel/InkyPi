@@ -1,7 +1,15 @@
 <div class="form-group">
+    <label for="layout" class="form-label">Disposition</label>
+    <select id="layout" name="layout" class="form-input">
+        <option value="simple" selected>Grand format : intérieur / extérieur</option>
+        <option value="graphs">Avec les courbes de la semaine</option>
+    </select>
+</div>
+
+<div class="form-group">
     <label class="form-label">Météo extérieure (Open-Meteo, sans clé)</label>
     <div class="form-group">
-        <span>Latitude et longitude du logement (pour savoir quand ouvrir les fenêtres)</span>
+        <span>Latitude et longitude du logement (températures extérieures et moment pour aérer)</span>
         <input type="text" id="latitude" name="latitude" class="form-input" value="{{ defaults.latitude }}">
         <input type="text" id="longitude" name="longitude" class="form-input" value="{{ defaults.longitude }}">
     </div>
@@ -11,7 +19,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         if (loadPluginSettings) {
-            ['latitude', 'longitude'].forEach(id => {
+            ['layout', 'latitude', 'longitude'].forEach(id => {
                 if (pluginSettings[id]) document.getElementById(id).value = pluginSettings[id];
             });
         }
