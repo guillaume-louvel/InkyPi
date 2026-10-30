@@ -28,6 +28,18 @@ class TestCorrection:
         assert fixed.temperature == 20.0
         assert 55 < fixed.humidity < 57   # same amount of water at a lower temperature
 
+    def test_humidity_correction(self):
+        # Two hygrometers agreed on 54.6 % when the BME280 read 46 %
+        assert corrected(Reading(NOW, 21.0, 46.0), 0, 8.6).humidity == pytest.approx(54.6)
+        assert corrected(Reading(NOW, 21.0, 46.0), 0, 8.6).temperature == 21.0
+        assert corrected(Reading(NOW, 21.0, 95.0), 0, 8.6).humidity == 100.0   # capped
+
+    def test_both_corrections(self):
+        # Temperature first (humidity recomputed for it), then the humidity sensor's own bias
+        fixed = corrected(Reading(NOW, 22.0, 50.0), -2.0, 5.0)
+        assert fixed.temperature == 20.0
+        assert 60 < fixed.humidity < 62
+
     def test_no_offset_changes_nothing(self):
         r = Reading(NOW, 22.0, 50.0)
         assert corrected(r, 0) is r
@@ -44,6 +56,7 @@ class TestStorage:
         assert [r.temperature for r in climate.history(30 * 24 * 3600, db_file=db, now=NOW)] == [19.0, 21.0]
         assert climate.latest(db_file=db, now=NOW).temperature == 21.0
         assert climate.latest(offset=-1, db_file=db, now=NOW).temperature == 20.0
+        assert climate.latest(humidity_offset=8.6, db_file=db, now=NOW).humidity == pytest.approx(58.6)
         # Nothing recent (sensor unplugged for 2 hours): no reading rather than an old one
         assert climate.latest(db_file=db, now=NOW + timedelta(minutes=70)).temperature == 21.0
         assert climate.latest(db_file=db, now=NOW + timedelta(hours=2)) is None

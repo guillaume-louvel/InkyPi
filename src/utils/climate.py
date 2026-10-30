@@ -2,8 +2,8 @@
 
 ClimateRecorder reads the sensor in a background thread and keeps one week of readings in a small
 SQLite database (about 170 rows). Plugins read them back with latest() and history(), which apply
-the temperature correction set on the Settings page ("climate_temp_offset"). Raw readings are
-stored, so the correction can be changed at any time, history included.
+the corrections set on the Settings page ("climate_temp_offset", "climate_humidity_offset"). Raw
+readings are stored, so the corrections can be changed at any time, history included.
 """
 
 import logging
@@ -44,14 +44,15 @@ def vapour_pressure(temperature, humidity):
     return humidity / 100 * saturation_pressure(temperature)
 
 
-def corrected(reading, offset):
-    """Applies a temperature correction. The air holds the same amount of water, so relative
-    humidity is recomputed for the corrected temperature: a sensor warmed by the Pi reads too dry."""
-    if not offset:
+def corrected(reading, offset, humidity_offset=0):
+    """Applies the corrections. For the temperature, the air holds the same amount of water, so
+    relative humidity is recomputed for the corrected temperature (a sensor warmed by the Pi reads
+    too dry). The humidity correction, in % points, then fixes the humidity sensor's own bias."""
+    if not offset and not humidity_offset:
         return reading
     temperature = reading.temperature + offset
     humidity = vapour_pressure(reading.temperature, reading.humidity) / saturation_pressure(temperature) * 100
-    return replace(reading, temperature=temperature, humidity=max(0.0, min(100.0, humidity)))
+    return replace(reading, temperature=temperature, humidity=max(0.0, min(100.0, humidity + humidity_offset)))
 
 
 def open_sensor():
@@ -92,8 +93,8 @@ def store(reading, db_file=None):
         connection.close()
 
 
-def history(seconds, offset=0, db_file=None, now=None):
-    """Readings from the last `seconds`, oldest first, with the temperature correction applied."""
+def history(seconds, offset=0, humidity_offset=0, db_file=None, now=None):
+    """Readings from the last `seconds`, oldest first, with the corrections applied."""
     db_file = db_file or DB_FILE
     if not os.path.exists(db_file):
         return []
@@ -104,12 +105,13 @@ def history(seconds, offset=0, db_file=None, now=None):
                                   (since,)).fetchall()
     finally:
         connection.close()
-    return [corrected(Reading(datetime.fromtimestamp(ts, timezone.utc), t, h), offset) for ts, t, h in rows]
+    return [corrected(Reading(datetime.fromtimestamp(ts, timezone.utc), t, h), offset, humidity_offset)
+            for ts, t, h in rows]
 
 
-def latest(offset=0, max_age_seconds=MAX_AGE_SECONDS, db_file=None, now=None):
+def latest(offset=0, humidity_offset=0, max_age_seconds=MAX_AGE_SECONDS, db_file=None, now=None):
     """The most recent reading if it is fresh enough, else None (sensor unplugged, recorder stopped)."""
-    readings = history(max_age_seconds, offset, db_file, now)
+    readings = history(max_age_seconds, offset, humidity_offset, db_file, now)
     return readings[-1] if readings else None
 
 

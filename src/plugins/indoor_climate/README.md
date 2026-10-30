@@ -25,11 +25,15 @@ dehors (Open-Meteo, sans clé), avec le confort de la pièce et le moment pour a
 - **Courbes** (disposition avec courbes) : les pointillés horizontaux marquent la plage
   d'humidité confortable. Une courbe intérieure interrompue signale que le Pi était éteint.
 
-## Correction de température
+## Corrections du capteur
 
-Collé au Pi, le capteur mesure souvent 1 à 3 °C de trop. Compare avec un thermomètre,
-puis règle **Temperature sensor correction** dans les paramètres d'InkyPi (ex. `-1,5`).
-L'humidité est recalculée en conséquence, et la correction s'applique aussi à
-l'historique déjà enregistré.
+Dans les paramètres d'InkyPi, compare avec un thermomètre et un hygromètre de référence :
+
+- **Temperature sensor correction** (°C) : collé au Pi, le capteur peut mesurer 1 à 3 °C
+  de trop (ex. `-1,5`). L'humidité relative est recalculée pour la température corrigée.
+- **Humidity sensor correction** (points de %) : ajoutée après, pour le biais propre au
+  capteur d'humidité (ex. `8,6` s'il indique 46 % quand deux hygromètres indiquent 54,6 %).
+
+Les corrections s'appliquent aussi à l'historique déjà enregistré.
 
 Une mesure par heure : rafraîchir le plugin toutes les heures suffit.

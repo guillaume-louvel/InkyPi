@@ -195,6 +195,13 @@
                     </div>
 
                     <div class="form-group nowrap">
+                        <label class="form-label" for="climateHumidityOffset">Humidity sensor correction (%)</label>
+                        <input type="number" id="climateHumidityOffset" name="climateHumidityOffset" class="form-input" step="0.1" min="-30" max="30"
+                               value="{{ device_settings.climate_humidity_offset or 0 }}"
+                               title="Added to the BME280 humidity, e.g. 8.6 if it reads 46 % when a reference hygrometer shows 54.6 %">
+                    </div>
+
+                    <div class="form-group nowrap">
                         <label class="form-label" for="logSystemStats">Log System Stats</label>
                             <input type="checkbox" id="logSystemStats" name="logSystemStats" {% if device_settings.log_system_stats %}checked{% endif %}>
                         </label>

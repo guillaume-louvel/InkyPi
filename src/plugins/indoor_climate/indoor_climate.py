@@ -231,8 +231,9 @@ class IndoorClimate(BasePlugin):
         tz = pytz.timezone(device_config.get_config("timezone", default="Europe/Paris"))
         maintenant = datetime.now(timezone.utc)
         correction = float(device_config.get_config("climate_temp_offset", default=0) or 0)
+        correction_humidite = float(device_config.get_config("climate_humidity_offset", default=0) or 0)
 
-        historique = climate.history(SEMAINE.total_seconds(), correction)
+        historique = climate.history(SEMAINE.total_seconds(), correction, correction_humidite)
         if not historique or maintenant - historique[-1].time > timedelta(seconds=climate.MAX_AGE_SECONDS):
             raise RuntimeError("Aucune mesure récente du capteur BME280. Est-il bien branché ? "
                                "(sudo i2cdetect -y 1 doit afficher 76 ou 77)")

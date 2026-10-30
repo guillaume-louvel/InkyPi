@@ -57,6 +57,12 @@ def save_settings():
             return jsonify({"error": "Temperature correction must be a number"}), 400
         if not -15 <= climate_temp_offset <= 15:
             return jsonify({"error": "Temperature correction must be between -15 and 15 °C"}), 400
+        try:
+            climate_humidity_offset = float((form_data.get("climateHumidityOffset") or "0").replace(",", "."))
+        except ValueError:
+            return jsonify({"error": "Humidity correction must be a number"}), 400
+        if not -30 <= climate_humidity_offset <= 30:
+            return jsonify({"error": "Humidity correction must be between -30 and 30 %"}), 400
 
         settings = {
             "name": form_data.get("deviceName"),
@@ -67,6 +73,7 @@ def save_settings():
             "time_format": form_data.get("timeFormat"),
             "plugin_cycle_interval_seconds": plugin_cycle_interval_seconds,
             "climate_temp_offset": climate_temp_offset,
+            "climate_humidity_offset": climate_humidity_offset,
             "image_settings": {
                 "saturation": float(form_data.get("saturation", "1.0")),
                 "brightness": float(form_data.get("brightness", "1.0")),
