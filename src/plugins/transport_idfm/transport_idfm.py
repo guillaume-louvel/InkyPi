@@ -229,7 +229,7 @@ class TransportIdfm(BasePlugin):
         e.trafic_connu = True
         e.a_l_arret = m(3)
         e.meteo = meteo.Meteo(temperature=7.4, ressenti=4.1, code=3, jour=True, debut=m(0), fin=m(45),
-                              t_min=6.8, t_max=8.2, ressenti_min=3.6, pluie_mm=1.4, pluie_proba=80,
+                              t_min=6.8, t_max=8.2, pluie_mm=1.4, pluie_proba=80,
                               pluie_debut=m(20), vent=18, rafales=42, code_trajet=61,
                               alertes=[f"Pluie dès {meteo.h(m(20))}"])
         return e, {"bus": "Mon arrêt (démo)", "rer": "Joinville-le-Pont", "dest": "Nanterre-Préfecture"}

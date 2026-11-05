@@ -56,7 +56,6 @@ class Meteo:
     fin: datetime
     t_min: float | None = None
     t_max: float | None = None
-    ressenti_min: float | None = None
     pluie_mm: float = 0.0
     pluie_proba: int | None = None
     pluie_debut: datetime | None = None
@@ -74,14 +73,11 @@ class Meteo:
             pluie = f"Risque de pluie {self.pluie_proba} %"
         else:
             pluie = "Pas de pluie prévue"
-        temp = (f"{round(self.t_min)}° à {round(self.t_max)}°" if self.t_min is not None
-                and round(self.t_min) != round(self.t_max) else f"{round(self.temperature)}°")
         return {
             "temperature": round(self.temperature),
             "ressenti": round(self.ressenti),
             "icone": icone(self.code, self.jour),
             "etat": ETATS.get(code, ""),
-            "temp_trajet": temp + (f", ressenti {round(self.ressenti_min)}°" if self.ressenti_min is not None else ""),
             "pluie": pluie,
             "vent": (f"Vent {round(self.vent)} km/h, rafales {round(self.rafales)}"
                      if self.vent is not None and self.rafales is not None else ""),
@@ -93,7 +89,7 @@ def prevision(lat: float, lon: float, tz, debut: datetime, fin: datetime) -> Met
     r = requests.get(URL, timeout=TIMEOUT, params={
         "latitude": lat, "longitude": lon,
         "current": "temperature_2m,apparent_temperature,weather_code,is_day",
-        "hourly": "temperature_2m,apparent_temperature,precipitation_probability,weather_code,"
+        "hourly": "temperature_2m,precipitation_probability,weather_code,"
                   "wind_speed_10m,wind_gusts_10m",
         "minutely_15": "precipitation",
         "timezone": tz.zone if hasattr(tz, "zone") else str(tz),
@@ -124,8 +120,6 @@ def analyser(data: dict, tz, debut: datetime, fin: datetime) -> Meteo:
 
     if temperatures := valeurs("temperature_2m"):
         m.t_min, m.t_max = min(temperatures), max(temperatures)
-    if ressentis := valeurs("apparent_temperature"):
-        m.ressenti_min = min(ressentis)
     if probas := valeurs("precipitation_probability"):
         m.pluie_proba = int(max(probas))
     if vents := valeurs("wind_speed_10m"):

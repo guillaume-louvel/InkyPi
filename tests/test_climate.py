@@ -171,6 +171,13 @@ class TestOutdoorWeather:
         assert ext.historique[-1].time == NOW and ext.historique[0].time == datetime(2026, 10, 24, tzinfo=timezone.utc)
         assert ext.pour_aerer()[0] is ext.actuel
 
+    def test_weather_icon(self):
+        data = self.response()
+        data["current"]["is_day"] = 1
+        assert analyser_meteo(data, PARIS, NOW).icone.endswith("plugins/weather/icons/04d.png")   # overcast
+        data["current"].update(weather_code=0, is_day=0)
+        assert analyser_meteo(data, PARIS, NOW).icone.endswith("plugins/weather/icons/01n.png")   # clear night
+
     def test_missing_values_are_skipped(self):
         data = self.response()
         data["hourly"]["temperature_2m"][62] = None   # Monday 14:00 UTC

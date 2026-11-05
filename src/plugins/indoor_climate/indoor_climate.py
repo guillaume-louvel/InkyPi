@@ -7,7 +7,7 @@ import pytz
 import requests
 
 from plugins.base_plugin.base_plugin import BasePlugin
-from plugins.transport_idfm.meteo import ETATS
+from plugins.transport_idfm.meteo import ETATS, icone
 from utils import climate
 
 logger = logging.getLogger(__name__)
@@ -74,6 +74,7 @@ class Exterieur:
     actuel: Meteo
     ressenti: float
     etat: str
+    icone: str = ""                     # chemin de l'icône météo (jeu du plugin météo d'InkyPi)
     t_min: float | None = None          # aujourd'hui (journée locale)
     t_max: float | None = None
     prevues: list = field(default_factory=list)      # les 24 h à venir, heure par heure
@@ -87,7 +88,7 @@ def meteo_exterieure(latitude, longitude, tz, semaine=False):
     """Une seule requête Open-Meteo : maintenant, les 24 h à venir et, si demandé, les 7 derniers jours."""
     params = {
         "latitude": latitude, "longitude": longitude,
-        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code",
+        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,is_day",
         "hourly": "temperature_2m,relative_humidity_2m,precipitation",
         "forecast_days": 2,
     }
@@ -105,6 +106,7 @@ def analyser_meteo(data, tz, maintenant):
         actuel=Meteo(maintenant, actuel["temperature_2m"], actuel["relative_humidity_2m"], actuel.get("precipitation") or 0),
         ressenti=actuel.get("apparent_temperature", actuel["temperature_2m"]),
         etat=ETATS.get(int(actuel.get("weather_code") or 0), ""),
+        icone=icone(int(actuel.get("weather_code") or 0), bool(actuel.get("is_day", 1))),
     )
     minuit = tz.localize(datetime.combine(maintenant.astimezone(tz).date(), datetime.min.time()))
     lendemain = tz.localize(datetime.combine(minuit.date() + timedelta(days=1), datetime.min.time()))
@@ -260,6 +262,7 @@ class IndoorClimate(BasePlugin):
                 "temperature": nombre(exterieur.actuel.temperature),
                 "humidite": round(exterieur.actuel.humidite),
                 "etat": exterieur.etat,
+                "icone": exterieur.icone,
                 "ressenti": nombre(exterieur.ressenti, 0),
                 "min_max": (f"min {nombre(exterieur.t_min, 0)}° / max {nombre(exterieur.t_max, 0)}° aujourd'hui"
                             if exterieur.t_min is not None else ""),

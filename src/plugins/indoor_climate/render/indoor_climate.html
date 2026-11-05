@@ -35,7 +35,8 @@
         <div class="carte">
             <div class="etiq">Extérieur <span>{{ exterieur.etat if exterieur }}</span></div>
             {% if exterieur %}
-            <div class="val"><span class="t">{{ exterieur.temperature }}°</span><span class="h">{{ exterieur.humidite }}&nbsp;%</span></div>
+            <div class="val"><span class="t">{{ exterieur.temperature }}°</span><span class="h">{{ exterieur.humidite }}&nbsp;%</span>
+                <img class="icone" src="{{ exterieur.icone }}" alt=""></div>
             <div class="sous">ressenti {{ exterieur.ressenti }}°{% if exterieur.min_max %} · {{ exterieur.min_max }}{% endif %}</div>
             {% else %}<div class="sous indispo">Météo indisponible</div>{% endif %}
         </div>
@@ -63,7 +64,7 @@
         <div class="moitie">
             <div class="etiq">Extérieur</div>
             {% if exterieur %}
-            <div class="t">{{ exterieur.temperature }}°</div>
+            <div class="temp-icone"><img class="icone" src="{{ exterieur.icone }}" alt=""><span class="t">{{ exterieur.temperature }}°</span></div>
             <div class="h">{{ exterieur.humidite }}&nbsp;%</div>
             <div class="sous">{% if exterieur.etat %}{{ exterieur.etat }} · {% endif %}ressenti {{ exterieur.ressenti }}°</div>
             {% if exterieur.min_max %}<div class="sous">{{ exterieur.min_max }}</div>{% endif %}

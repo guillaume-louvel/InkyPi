@@ -50,6 +50,8 @@
 .grand .moitie + .moitie { border-left: 3px solid #000; }
 .grand .etiq { font-size: 4.2vmin; }
 .grand .t { font-size: 21vmin; }
+.grand .temp-icone { display: flex; align-items: center; gap: 2vmin; }
+.grand .icone { height: 18vmin; width: auto; }
 .grand .h { font-size: 9.5vmin; }
 .grand .aerer { font-size: 4.6vmin; text-align: center; margin-top: 2.5vmin; }
 
@@ -61,6 +63,7 @@
 .carte .val { display: flex; align-items: baseline; gap: 3vmin; margin: 0.8vmin 0; }
 .carte .t { font-size: 13vmin; }
 .carte .h { font-size: 7vmin; }
+.carte .icone { height: 12vmin; width: auto; margin-left: auto; align-self: center; }
 .courbes { flex: 1; min-height: 0; display: flex; gap: 4vmin; }
 .courbe { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .courbe-titre { font-size: 3.2vmin; font-weight: 600; }
@@ -82,5 +85,6 @@
   .grand .moities { flex-direction: column; }
   .grand .moitie + .moitie { border-left: none; border-top: 3px solid #000; }
   .grand .t { font-size: 17vmin; }
+  .grand .icone { height: 15vmin; }
   .cartes, .courbes { flex-direction: column; }
 }

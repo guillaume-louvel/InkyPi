@@ -16,11 +16,11 @@
         </div>
         <div class="meteo-trajet">
             <div class="meteo-titre">{{ meteo.etat }}</div>
-            <div>{{ meteo.temp_trajet }}</div>
             <div>
                 {% if meteo.alertes %}<span class="meteo-alerte">⚠ {{ meteo.alertes | join(" · ") }}</span>
-                {% else %}{{ meteo.pluie }}{% endif %}{% if meteo.vent %} · {{ meteo.vent }}{% endif %}
+                {% else %}{{ meteo.pluie }}{% endif %}
             </div>
+            {% if meteo.vent %}<div>{{ meteo.vent }}</div>{% endif %}
         </div>
     </section>
     {% endif %}
